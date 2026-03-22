@@ -253,18 +253,36 @@ install_argus() {
         run_with_spinner "Creating Python venv" python3 -m venv "$INSTALL_DIR/.venv"
     fi
 
+    # Force reinstall to recreate entry points after pyproject.toml changes
     run_with_spinner "Installing Python dependencies" \
-        "$INSTALL_DIR/.venv/bin/pip" install --no-input -e ".[dev]"
+        "$INSTALL_DIR/.venv/bin/pip" install --no-input --force-reinstall --no-deps -e .
+    # Install all deps (not force-reinstalled)
+    "$INSTALL_DIR/.venv/bin/pip" install --no-input -q -e ".[dev]" 2>/dev/null || true
 
     ok "Argus Lite installed"
 
-    # Shell alias
-    local rc="$HOME/.zshrc"
-    [[ -f "$HOME/.bashrc" && ! -f "$HOME/.zshrc" ]] && rc="$HOME/.bashrc"
-    # Symlink so 'argus' works system-wide (no alias needed)
+    # Verify entry point was created
+    if [[ ! -x "$INSTALL_DIR/.venv/bin/argus" ]]; then
+        warn "Entry point not found, creating wrapper script..."
+        cat > "$INSTALL_DIR/.venv/bin/argus" << 'WRAPPER'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/python" -m argus_lite.cli "$@"
+WRAPPER
+        chmod +x "$INSTALL_DIR/.venv/bin/argus"
+    fi
+
+    # Symlink into /usr/local/bin so it works from anywhere
+    sudo rm -f /usr/local/bin/argus /usr/local/bin/argus-lite 2>/dev/null
     sudo ln -sf "$INSTALL_DIR/.venv/bin/argus" /usr/local/bin/argus
     sudo ln -sf "$INSTALL_DIR/.venv/bin/argus-lite" /usr/local/bin/argus-lite
-    ok "Commands 'argus' and 'argus-lite' available globally"
+
+    # Verify it actually works
+    if /usr/local/bin/argus --version &>/dev/null; then
+        ok "Command 'argus' is ready (/usr/local/bin/argus)"
+    else
+        warn "Symlink failed. Use: $INSTALL_DIR/.venv/bin/argus"
+    fi
 
     "$INSTALL_DIR/.venv/bin/argus" init 2>/dev/null || true
     ok "Config: ~/.argus-lite/"
