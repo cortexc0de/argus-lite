@@ -1,0 +1,7 @@
+https://example.com/old-admin
+https://example.com/backup.sql
+https://example.com/.env
+https://example.com/api/v1/debug
+https://example.com/wp-config.php.bak
+https://example.com/test
+https://example.com/staging

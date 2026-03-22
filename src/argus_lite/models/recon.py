@@ -36,6 +36,48 @@ class CertificateInfo(BaseModel):
     serial_number: str = ""
 
 
+class HttpProbe(BaseModel):
+    url: str
+    status_code: int
+    title: str = ""
+    content_length: int = 0
+    tech: list[str] = []
+    response_time_ms: int = 0
+    content_type: str = ""
+    server: str = ""
+
+
+class CrawlResult(BaseModel):
+    url: str
+    method: str = "GET"
+    source: str = ""
+    tag: str = ""
+    attribute: str = ""
+
+
+class HistoricalUrl(BaseModel):
+    url: str
+    source: str = ""  # wayback, commoncrawl, etc.
+
+
+class DnsResolution(BaseModel):
+    host: str
+    a: list[str] = []
+    aaaa: list[str] = []
+    cname: list[str] = []
+    wildcard: bool = False
+
+
+class TlsCert(BaseModel):
+    host: str
+    subject_cn: str = ""
+    issuer: str = ""
+    san: list[str] = []
+    not_after: str = ""
+    expired: bool = False
+    self_signed: bool = False
+
+
 class ReconResult(BaseModel):
     """Aggregated result from recon module."""
 
@@ -43,3 +85,8 @@ class ReconResult(BaseModel):
     subdomains: list[Subdomain] = []
     whois_info: WhoisInfo | None = None
     certificate_info: CertificateInfo | None = None
+    http_probes: list[HttpProbe] = []
+    crawl_results: list[CrawlResult] = []
+    historical_urls: list[HistoricalUrl] = []
+    dns_resolutions: list[DnsResolution] = []
+    tls_certs: list[TlsCert] = []

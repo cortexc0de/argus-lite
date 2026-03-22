@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from argus_lite.models.analysis import AnalysisResult
 from argus_lite.models.finding import Finding, Vulnerability
 from argus_lite.models.recon import ReconResult
+from argus_lite.models.risk import RiskSummary
 
 
 class AuditEntry(BaseModel):
@@ -47,6 +48,9 @@ class ScanResult(BaseModel):
     tools_used: list[str] = []
     config_snapshot: dict = {}
     audit_log: list[AuditEntry] = []
+
+    # Risk assessment
+    risk_summary: RiskSummary | None = None
 
     # Partial results support
     completed_stages: list[str] = []

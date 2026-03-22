@@ -51,6 +51,15 @@ class NucleiFinding(BaseModel):
     tags: list[str] = []
 
 
+class FfufResult(BaseModel):
+    url: str
+    status_code: int
+    content_length: int = 0
+    words: int = 0
+    lines: int = 0
+    redirect_location: str = ""
+
+
 class AnalysisResult(BaseModel):
     """Aggregated result from analysis module."""
 
@@ -59,3 +68,4 @@ class AnalysisResult(BaseModel):
     ssl_info: SSLInfo | None = None
     security_headers: SecurityHeadersResult | None = None
     nuclei_findings: list[NucleiFinding] = []
+    fuzz_results: list[FfufResult] = []

@@ -1,0 +1,10 @@
+https://example.com/
+https://example.com/about
+https://example.com/contact
+https://example.com/api/v1/users
+https://example.com/static/js/app.js
+https://example.com/static/css/style.css
+https://example.com/login
+https://example.com/wp-admin
+https://example.com/robots.txt
+https://example.com/sitemap.xml

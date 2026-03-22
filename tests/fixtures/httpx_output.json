@@ -1,0 +1,4 @@
+{"url":"https://example.com","status_code":200,"title":"Example Domain","content_length":1256,"content_type":"text/html","method":"GET","host":"93.184.216.34","tech":["Apache","PHP","jQuery"],"server":"ECAcc","response_time":"125ms","failed":false}
+{"url":"https://www.example.com","status_code":301,"title":"","content_length":0,"content_type":"text/html","method":"GET","host":"93.184.216.34","tech":[],"server":"ECAcc","response_time":"98ms","failed":false}
+{"url":"https://mail.example.com","status_code":200,"title":"Webmail Login","content_length":4521,"content_type":"text/html","method":"GET","host":"93.184.216.35","tech":["Roundcube"],"server":"nginx","response_time":"210ms","failed":false}
+{"url":"https://api.example.com","status_code":403,"title":"Forbidden","content_length":162,"content_type":"text/html","method":"GET","host":"93.184.216.36","tech":["nginx"],"server":"nginx","response_time":"45ms","failed":false}

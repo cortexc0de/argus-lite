@@ -1,0 +1,2 @@
+{"host":"example.com:443","subject_cn":"www.example.org","issuer_cn":"DigiCert Global G2 TLS RSA SHA256 2020 CA1","not_after":"2027-02-13T23:59:59Z","san":["www.example.org","example.com","example.edu","www.example.com","www.example.net"],"expired":false,"self_signed":false,"serial":"0be1562bc6263b5de3c3bfc85192ad13"}
+{"host":"mail.example.com:443","subject_cn":"mail.example.com","issuer_cn":"Let's Encrypt","not_after":"2026-06-15T00:00:00Z","san":["mail.example.com"],"expired":false,"self_signed":false,"serial":"abc123"}
