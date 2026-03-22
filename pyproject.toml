@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
+argus = "argus_lite.cli:main"
 argus-lite = "argus_lite.cli:main"
 
 [project.optional-dependencies]

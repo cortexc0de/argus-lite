@@ -261,12 +261,12 @@ install_argus() {
     # Shell alias
     local rc="$HOME/.zshrc"
     [[ -f "$HOME/.bashrc" && ! -f "$HOME/.zshrc" ]] && rc="$HOME/.bashrc"
-    if ! grep -q 'alias argus-lite=' "$rc" 2>/dev/null; then
-        echo "alias argus-lite='$INSTALL_DIR/.venv/bin/argus-lite'" >> "$rc"
-        ok "Alias 'argus-lite' added to $rc"
-    fi
+    # Symlink so 'argus' works system-wide (no alias needed)
+    sudo ln -sf "$INSTALL_DIR/.venv/bin/argus" /usr/local/bin/argus
+    sudo ln -sf "$INSTALL_DIR/.venv/bin/argus-lite" /usr/local/bin/argus-lite
+    ok "Commands 'argus' and 'argus-lite' available globally"
 
-    "$INSTALL_DIR/.venv/bin/argus-lite" init 2>/dev/null || true
+    "$INSTALL_DIR/.venv/bin/argus" init 2>/dev/null || true
     ok "Config: ~/.argus-lite/"
 }
 
@@ -276,9 +276,9 @@ verify() {
     echo ""
     echo -e "${BOLD}=== Tool Status ===${NC}"
     echo ""
-    "$INSTALL_DIR/.venv/bin/argus-lite" tools check 2>/dev/null || true
+    "$INSTALL_DIR/.venv/bin/argus" tools check 2>/dev/null || true
     echo ""
-    "$INSTALL_DIR/.venv/bin/argus-lite" --version 2>/dev/null || true
+    "$INSTALL_DIR/.venv/bin/argus" --version 2>/dev/null || true
 }
 
 # --- Main ---
@@ -317,9 +317,9 @@ main() {
     echo ""
     echo -e "${GREEN}${BOLD}=== Installation complete ===${NC}"
     echo ""
-    echo "  1. Reload shell:   source ~/.zshrc"
-    echo "  2. Quick scan:     argus-lite scan <target> --preset quick"
-    echo "  3. Full scan:      argus-lite scan <target> --preset full --output html"
+    echo "  Quick scan:     argus scan <target> --preset quick"
+    echo "  Full scan:      argus scan <target> --preset full --output html"
+    echo "  Check tools:    argus tools check"
     echo ""
 }
 
