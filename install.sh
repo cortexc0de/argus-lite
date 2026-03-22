@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Argus Lite — Installer for Kali Linux
-# Usage: chmod +x install.sh && ./install.sh
+# Downloads pre-built binaries (no Go compilation needed)
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,6 +13,7 @@ NC='\033[0m'
 
 INSTALL_DIR="${ARGUS_DIR:-$HOME/argus-lite}"
 REPO_URL="https://github.com/cortexc0de/argus-lite.git"
+BIN_DIR="/usr/local/bin"
 
 info()  { echo -e "${CYAN}[*]${NC} $1"; }
 ok()    { echo -e "${GREEN}[+]${NC} $1"; }
@@ -32,16 +33,12 @@ spin() {
     return $?
 }
 
-# Run command with spinner (stdout/stderr to log file)
 run_with_spinner() {
-    local msg="$1"
-    shift
+    local msg="$1"; shift
     local logfile
     logfile=$(mktemp /tmp/argus-install-XXXXXX.log)
-
     "$@" >"$logfile" 2>&1 &
     local pid=$!
-
     if spin "$pid" "$msg"; then
         printf "\r${GREEN}[+]${NC} %-60s\n" "$msg"
         rm -f "$logfile"
@@ -49,24 +46,35 @@ run_with_spinner() {
     else
         printf "\r${RED}[-]${NC} %-60s\n" "$msg — FAILED"
         echo -e "${YELLOW}    Log: $logfile${NC}"
-        echo "    Last 5 lines:"
-        tail -5 "$logfile" | sed 's/^/    /'
+        tail -5 "$logfile" 2>/dev/null | sed 's/^/    /'
         return 1
     fi
 }
 
+# Detect arch for binary downloads
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64|amd64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        armv7*|armhf) echo "armv6" ;;
+        *) echo "amd64" ;;
+    esac
+}
+
+ARCH=$(detect_arch)
+OS="linux"
+
 # --- Pre-checks ---
 
 check_os() {
-    if [[ ! -f /etc/os-release ]]; then
-        warn "Cannot detect OS"
-        return
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        ok "OS: $PRETTY_NAME ($ARCH)"
+    else
+        warn "Unknown OS ($ARCH)"
     fi
-    . /etc/os-release
-    case "$ID" in
-        kali|debian|ubuntu|parrot) ok "OS: $PRETTY_NAME" ;;
-        *) warn "Untested OS: $PRETTY_NAME" ;;
-    esac
 }
 
 check_python() {
@@ -82,21 +90,34 @@ check_python() {
     fi
 }
 
-# Ask for sudo password upfront so it doesn't block later
 get_sudo() {
-    if sudo -n true 2>/dev/null; then
-        return
-    fi
+    if sudo -n true 2>/dev/null; then return; fi
     echo ""
-    info "Some steps need sudo. Enter your password now:"
+    info "Some steps need sudo. Enter password:"
     sudo -v || fail "sudo required"
     echo ""
 }
 
 # --- System dependencies ---
 
+wait_for_dpkg() {
+    local tries=0
+    while sudo fuser /var/lib/dpkg/lock-frontend &>/dev/null 2>&1; do
+        if [[ $tries -eq 0 ]]; then
+            info "Waiting for other apt/dpkg process to finish..."
+        fi
+        sleep 2
+        tries=$((tries + 1))
+        if [[ $tries -gt 30 ]]; then
+            warn "dpkg lock held too long, skipping apt"
+            return 1
+        fi
+    done
+    return 0
+}
+
 install_apt_deps() {
-    local pkgs=(dnsutils whois openssl curl whatweb git python3-venv)
+    local pkgs=(dnsutils whois openssl curl whatweb git python3-venv libpcap-dev)
     local to_install=()
 
     for pkg in "${pkgs[@]}"; do
@@ -108,72 +129,103 @@ install_apt_deps() {
     done
 
     if [[ ${#to_install[@]} -gt 0 ]]; then
+        wait_for_dpkg || return 0
         run_with_spinner "apt update" sudo apt update -y || true
-        run_with_spinner "Installing ${to_install[*]}" sudo apt install -y "${to_install[@]}" || \
-            warn "Some packages failed to install"
+        run_with_spinner "Installing ${to_install[*]}" \
+            sudo apt install -y "${to_install[@]}" || \
+            warn "Some packages failed"
     fi
 }
 
-# --- Go + ProjectDiscovery tools ---
+# --- Download pre-built binaries ---
 
-install_go() {
-    if command -v go &>/dev/null; then
-        ok "Go $(go version | grep -oP '\d+\.\d+\.\d+' || echo 'found')"
-        return
-    fi
-    run_with_spinner "Installing Go" sudo apt install -y golang || \
-        fail "Could not install Go"
-    ok "Go installed"
+# Get latest release tag from GitHub API
+get_latest_release() {
+    local repo="$1"
+    curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | \
+        grep -oP '"tag_name":\s*"\K[^"]+'
 }
 
-setup_go_path() {
-    local gobin
-    gobin="$(go env GOPATH 2>/dev/null)/bin"
-    if [[ -z "$gobin" || "$gobin" == "/bin" ]]; then
-        gobin="$HOME/go/bin"
-    fi
-    export PATH="$PATH:$gobin"
+# Download and install a pre-built binary
+install_binary() {
+    local name="$1" repo="$2" url_pattern="$3"
 
-    local rc="$HOME/.zshrc"
-    [[ -f "$HOME/.bashrc" && ! -f "$HOME/.zshrc" ]] && rc="$HOME/.bashrc"
-    if ! grep -q 'go env GOPATH' "$rc" 2>/dev/null; then
-        echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> "$rc"
-        ok "Go PATH added to $rc"
-    fi
-}
-
-install_go_tool() {
-    local name="$1" pkg="$2"
-    local gobin
-    gobin="$(go env GOPATH 2>/dev/null)/bin"
-
-    if command -v "$name" &>/dev/null || [[ -x "$gobin/$name" ]]; then
-        ok "$name already installed"
-        return
+    if command -v "$name" &>/dev/null; then
+        ok "$name already installed ($(command -v "$name"))"
+        return 0
     fi
 
-    run_with_spinner "Compiling $name (this takes a few minutes)" go install "$pkg" || {
-        warn "$name failed to compile. Install manually: go install $pkg"
+    info "Downloading $name..."
+
+    local version
+    version=$(get_latest_release "$repo" 2>/dev/null) || {
+        warn "Could not fetch latest $name version"
         return 0
     }
 
-    if [[ -x "$gobin/$name" ]]; then
-        ok "$name -> $gobin/$name"
+    # Strip leading 'v' for URL if needed
+    local ver_stripped="${version#v}"
+
+    # Build download URL from pattern
+    local url
+    url=$(echo "$url_pattern" | sed "s|{VERSION}|$version|g; s|{VER}|$ver_stripped|g; s|{OS}|$OS|g; s|{ARCH}|$ARCH|g")
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
+    if run_with_spinner "Downloading $name $version" curl -fsSL -o "$tmpdir/archive.zip" "$url"; then
+        # Extract
+        cd "$tmpdir"
+        if [[ "$url" == *.zip ]]; then
+            unzip -q archive.zip 2>/dev/null || true
+        elif [[ "$url" == *.tar.gz || "$url" == *.tgz ]]; then
+            tar xzf archive.zip 2>/dev/null || true
+        fi
+
+        # Find and install binary
+        local bin_file
+        bin_file=$(find "$tmpdir" -name "$name" -type f -executable 2>/dev/null | head -1)
+        if [[ -z "$bin_file" ]]; then
+            bin_file=$(find "$tmpdir" -name "$name" -type f 2>/dev/null | head -1)
+        fi
+
+        if [[ -n "$bin_file" ]]; then
+            chmod +x "$bin_file"
+            sudo mv "$bin_file" "$BIN_DIR/$name"
+            ok "$name $version -> $BIN_DIR/$name"
+        else
+            warn "$name binary not found in archive"
+        fi
+        cd - >/dev/null
+    else
+        warn "Failed to download $name"
     fi
+
+    rm -rf "$tmpdir"
 }
 
-install_pd_tools() {
-    install_go
-    setup_go_path
-
+install_security_tools() {
     echo ""
-    info "Installing ProjectDiscovery tools (compiling from source)..."
-    info "This can take 5-15 minutes total. Be patient."
+    info "Downloading pre-built binaries (no compilation needed)..."
     echo ""
 
-    install_go_tool subfinder "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-    install_go_tool naabu "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
-    install_go_tool nuclei "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
+    install_binary "subfinder" \
+        "projectdiscovery/subfinder" \
+        "https://github.com/projectdiscovery/subfinder/releases/download/{VERSION}/subfinder_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "naabu" \
+        "projectdiscovery/naabu" \
+        "https://github.com/projectdiscovery/naabu/releases/download/{VERSION}/naabu_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "nuclei" \
+        "projectdiscovery/nuclei" \
+        "https://github.com/projectdiscovery/nuclei/releases/download/{VERSION}/nuclei_{VER}_{OS}_{ARCH}.zip"
+
+    # Set naabu raw socket capability
+    if [[ -x "$BIN_DIR/naabu" ]]; then
+        sudo setcap cap_net_raw=ep "$BIN_DIR/naabu" 2>/dev/null && \
+            ok "naabu: raw socket capability set" || true
+    fi
 
     # Update nuclei templates
     if command -v nuclei &>/dev/null; then
@@ -214,21 +266,8 @@ install_argus() {
         ok "Alias 'argus-lite' added to $rc"
     fi
 
-    # Init config
     "$INSTALL_DIR/.venv/bin/argus-lite" init 2>/dev/null || true
-    ok "Config initialized at ~/.argus-lite/"
-}
-
-# --- Naabu permissions ---
-
-fix_naabu_caps() {
-    local naabu_path
-    naabu_path="$(command -v naabu 2>/dev/null || echo "$(go env GOPATH 2>/dev/null)/bin/naabu")"
-    if [[ -x "$naabu_path" ]]; then
-        sudo setcap cap_net_raw=ep "$naabu_path" 2>/dev/null && \
-            ok "naabu: raw socket capability set" || \
-            warn "Could not set naabu capabilities (may need sudo for port scans)"
-    fi
+    ok "Config: ~/.argus-lite/"
 }
 
 # --- Verify ---
@@ -252,7 +291,7 @@ main() {
     echo "  / _ \ | '__/ _\` | | | / __| | |   | | __/ _ \\"
     echo " / ___ \| | | (_| | |_| \__ \ | |___| | ||  __/"
     echo "/_/   \_\_|  \__, |\__,_|___/ |_____|_|\__\___|"
-    echo "             |___/          Installer v1.0     "
+    echo "             |___/          Installer v1.1     "
     echo -e "${NC}"
 
     check_os
@@ -265,12 +304,11 @@ main() {
 
     echo ""
     echo -e "${BOLD}--- Step 2/4: Security tools ---${NC}"
-    install_pd_tools
+    install_security_tools
 
     echo ""
     echo -e "${BOLD}--- Step 3/4: Argus Lite ---${NC}"
     install_argus
-    fix_naabu_caps
 
     echo ""
     echo -e "${BOLD}--- Step 4/4: Verification ---${NC}"

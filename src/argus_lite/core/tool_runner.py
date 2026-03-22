@@ -43,20 +43,41 @@ class BaseToolRunner:
     def __init__(self, name: str, path: str) -> None:
         self.name = name
         self.path = path
+        self._resolved_path: str | None = None
 
     def check_available(self) -> bool:
-        """Check if tool binary exists and is executable."""
+        """Check if tool binary exists and is executable.
+
+        Tries configured path first, then falls back to shutil.which()
+        to find the tool anywhere in PATH.
+        """
+        import shutil
+
         p = Path(self.path)
-        return p.exists() and p.is_file() and _is_executable(p)
+        if p.exists() and p.is_file() and _is_executable(p):
+            self._resolved_path = self.path
+            return True
+
+        # Fallback: search PATH
+        found = shutil.which(self.name)
+        if found:
+            self._resolved_path = found
+            return True
+
+        return False
+
+    def _get_executable(self) -> str:
+        """Get resolved executable path."""
+        return self._resolved_path or self.path
 
     async def run(self, args: list[str], timeout: int = 300) -> ToolOutput:
         """Run the tool with given arguments. Never uses shell=True."""
         if not self.check_available():
             raise ToolNotFoundError(
-                f"Tool '{self.name}' not found at {self.path}"
+                f"Tool '{self.name}' not found at {self.path} or in PATH"
             )
 
-        command = [self.path, *args]
+        command = [self._get_executable(), *args]
         start = time.monotonic()
 
         try:
