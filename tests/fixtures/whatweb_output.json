@@ -1,0 +1,18 @@
+[
+  {
+    "target": "https://example.com",
+    "http_status": 200,
+    "plugins": {
+      "HTTPServer": {"string": ["ECAcc"]},
+      "Title": {"string": ["Example Domain"]},
+      "HTML5": {},
+      "X-Powered-By": {"string": ["Express"]},
+      "WordPress": {"version": ["6.4.2"], "string": ["WordPress"]},
+      "jQuery": {"version": ["3.7.1"]},
+      "Bootstrap": {"version": ["5.3.0"]},
+      "PHP": {"version": ["8.2.0"]},
+      "Apache": {"version": ["2.4.58"]},
+      "OpenSSL": {"version": ["3.0.13"]}
+    }
+  }
+]

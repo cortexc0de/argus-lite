@@ -1,0 +1,17 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            0b:e1:56:2b:c6:26:3b:5d:e3:c3:bf:c8:51:92:ad:13
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C = US, O = DigiCert Inc, CN = DigiCert Global G2 TLS RSA SHA256 2020 CA1
+        Validity
+            Not Before: Jan 13 00:00:00 2026 GMT
+            Not After : Feb 13 23:59:59 2027 GMT
+        Subject: C = US, ST = California, L = Los Angeles, O = Internet Corporation for Assigned Names and Numbers, CN = www.example.org
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+    X509v3 extensions:
+        X509v3 Subject Alternative Name:
+            DNS:www.example.org, DNS:example.com, DNS:example.edu, DNS:example.net, DNS:example.org, DNS:www.example.com, DNS:www.example.edu, DNS:www.example.net
