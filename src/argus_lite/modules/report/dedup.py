@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from argus_lite.models.analysis import Port
 from argus_lite.models.finding import Finding
 from argus_lite.models.scan import ScanResult
 
@@ -39,4 +40,22 @@ def compute_summary(scan: ScanResult) -> dict[str, int | float]:
         "low_count": low_count,
         "nuclei_findings": len(scan.analysis.nuclei_findings),
         "duration_seconds": duration,
+        "has_ssl": scan.analysis.ssl_info is not None,
+        "has_whois": scan.recon.whois_info is not None,
+        "has_cert": scan.recon.certificate_info is not None,
+        "security_headers_present": _count_sec_headers(scan),
+        "security_headers_total": 7,
     }
+
+
+def filter_relevant_ports(scan: ScanResult) -> list[Port]:
+    """Return only ports with known services (not empty service name)."""
+    return [p for p in scan.analysis.open_ports if p.service]
+
+
+def _count_sec_headers(scan: ScanResult) -> int:
+    sh = scan.analysis.security_headers
+    if not sh:
+        return 0
+    return sum([sh.hsts, sh.x_frame_options, sh.x_content_type_options,
+                sh.csp, sh.x_xss_protection, sh.referrer_policy, sh.permissions_policy])

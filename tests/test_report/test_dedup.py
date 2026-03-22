@@ -52,6 +52,25 @@ class TestDeduplication:
         assert len(result) == 2
 
 
+class TestFilterRelevantPorts:
+    def test_filters_empty_service(self, full_scan_result):
+        from argus_lite.models.analysis import Port
+        from argus_lite.modules.report.dedup import filter_relevant_ports
+
+        full_scan_result.analysis.open_ports.append(
+            Port(port=99999, protocol="tcp", service="", banner="")
+        )
+        relevant = filter_relevant_ports(full_scan_result)
+        assert all(p.service for p in relevant)
+        assert not any(p.port == 99999 for p in relevant)
+
+    def test_keeps_ports_with_service(self, full_scan_result):
+        from argus_lite.modules.report.dedup import filter_relevant_ports
+
+        relevant = filter_relevant_ports(full_scan_result)
+        assert len(relevant) == 3  # ssh, http, https
+
+
 class TestSummaryStats:
     def test_compute_stats(self, full_scan_result):
         from argus_lite.modules.report.dedup import compute_summary
