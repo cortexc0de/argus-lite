@@ -11,7 +11,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-INSTALL_DIR="${ARGUS_DIR:-$HOME/argus-lite}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# If running from cloned repo, use that directory; otherwise default
+if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    INSTALL_DIR="$SCRIPT_DIR"
+else
+    INSTALL_DIR="${ARGUS_DIR:-$HOME/argus-lite}"
+fi
 REPO_URL="https://github.com/cortexc0de/argus-lite.git"
 BIN_DIR="/usr/local/bin"
 
@@ -271,6 +277,10 @@ exec "$DIR/python" -m argus_lite.cli "$@"
 WRAPPER
         chmod +x "$INSTALL_DIR/.venv/bin/argus"
     fi
+
+    # Ensure entry points are executable
+    chmod +x "$INSTALL_DIR/.venv/bin/argus" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/.venv/bin/argus-lite" 2>/dev/null || true
 
     # Symlink into /usr/local/bin so it works from anywhere
     sudo rm -f /usr/local/bin/argus /usr/local/bin/argus-lite 2>/dev/null
