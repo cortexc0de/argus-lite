@@ -66,11 +66,30 @@ class ToolsConfig(BaseModel):
     naabu: ToolEntry = ToolEntry(path=Path("/usr/bin/naabu"))
     nuclei: ToolEntry = ToolEntry(path=Path("/usr/bin/nuclei"))
     whatweb: ToolEntry = ToolEntry(path=Path("/usr/bin/whatweb"))
+    httpx_tool: ToolEntry = ToolEntry(path=Path("/usr/local/bin/httpx"))
+    katana: ToolEntry = ToolEntry(path=Path("/usr/local/bin/katana"))
+    ffuf: ToolEntry = ToolEntry(path=Path("/usr/local/bin/ffuf"))
+    gau: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gau"))
+    dnsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/dnsx"))
+    tlsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/tlsx"))
 
 
 class ApiKeysConfig(BaseModel):
     shodan: str = ""
     virustotal: str = ""
+
+
+class NotificationConfig(BaseModel):
+    enabled: bool = False
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+    discord_webhook: str = ""
+    slack_webhook: str = ""
+
+
+class PluginConfig(BaseModel):
+    enabled: bool = True
+    plugin_dirs: list[str] = ["~/.argus-lite/plugins"]
 
 
 class AppConfig(BaseModel):
@@ -80,6 +99,8 @@ class AppConfig(BaseModel):
     tools: ToolsConfig = ToolsConfig()
     nuclei: NucleiToolConfig = NucleiToolConfig()
     api_keys: ApiKeysConfig = ApiKeysConfig()
+    notifications: NotificationConfig = NotificationConfig()
+    plugins: PluginConfig = PluginConfig()
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -119,6 +140,16 @@ def _apply_env_overrides(config: AppConfig) -> None:
     vt_key = os.environ.get("ARGUS_VIRUSTOTAL_KEY")
     if vt_key:
         config.api_keys.virustotal = vt_key
+
+    for env_name, attr in [
+        ("ARGUS_TELEGRAM_TOKEN", "telegram_token"),
+        ("ARGUS_TELEGRAM_CHAT_ID", "telegram_chat_id"),
+        ("ARGUS_DISCORD_WEBHOOK", "discord_webhook"),
+        ("ARGUS_SLACK_WEBHOOK", "slack_webhook"),
+    ]:
+        val = os.environ.get(env_name)
+        if val:
+            setattr(config.notifications, attr, val)
 
 
 def _check_permissions(config_path: Path) -> None:

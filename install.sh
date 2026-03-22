@@ -227,6 +227,30 @@ install_security_tools() {
         "projectdiscovery/nuclei" \
         "https://github.com/projectdiscovery/nuclei/releases/download/{VERSION}/nuclei_{VER}_{OS}_{ARCH}.zip"
 
+    install_binary "httpx" \
+        "projectdiscovery/httpx" \
+        "https://github.com/projectdiscovery/httpx/releases/download/{VERSION}/httpx_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "katana" \
+        "projectdiscovery/katana" \
+        "https://github.com/projectdiscovery/katana/releases/download/{VERSION}/katana_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "dnsx" \
+        "projectdiscovery/dnsx" \
+        "https://github.com/projectdiscovery/dnsx/releases/download/{VERSION}/dnsx_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "tlsx" \
+        "projectdiscovery/tlsx" \
+        "https://github.com/projectdiscovery/tlsx/releases/download/{VERSION}/tlsx_{VER}_{OS}_{ARCH}.zip"
+
+    install_binary "gau" \
+        "lc/gau" \
+        "https://github.com/lc/gau/releases/download/{VERSION}/gau_{VER}_{OS}_{ARCH}.tar.gz"
+
+    install_binary "ffuf" \
+        "ffuf/ffuf" \
+        "https://github.com/ffuf/ffuf/releases/download/{VERSION}/ffuf_{VER}_{OS}_{ARCH}.tar.gz"
+
     # Set naabu raw socket capability
     if [[ -x "$BIN_DIR/naabu" ]]; then
         sudo setcap cap_net_raw=ep "$BIN_DIR/naabu" 2>/dev/null && \

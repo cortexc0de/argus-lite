@@ -36,12 +36,15 @@ def _get_config() -> AppConfig:
 
 
 def _build_registry(config: AppConfig) -> ToolRegistry:
-    """Build tool registry from config."""
+    """Build tool registry from config — dynamically iterates all tool entries."""
     registry = ToolRegistry()
-    for tool_name in ("subfinder", "naabu", "nuclei", "whatweb"):
-        entry = getattr(config.tools, tool_name, None)
+    # Map config field names to binary names
+    _name_map = {"httpx_tool": "httpx"}
+    for field_name in config.tools.model_fields:
+        entry = getattr(config.tools, field_name, None)
         if entry and entry.enabled:
-            registry.register(BaseToolRunner(name=tool_name, path=str(entry.path)))
+            bin_name = _name_map.get(field_name, field_name)
+            registry.register(BaseToolRunner(name=bin_name, path=str(entry.path)))
     return registry
 
 
@@ -59,6 +62,8 @@ def main() -> None:
 @click.option("--timeout", type=int, default=30, help="Timeout per request (seconds)")
 @click.option("--no-confirm", is_flag=True, default=False, help="Skip confirmation prompt")
 @click.option("--safe", is_flag=True, default=False, help="Passive checks only")
+@click.option("--notify", is_flag=True, default=False, help="Send notifications after scan")
+@click.option("--pipeline", "pipeline_path", type=click.Path(exists=True), default=None, help="Custom pipeline YAML")
 def scan(
     target: str,
     preset: str,
@@ -67,6 +72,8 @@ def scan(
     timeout: int,
     no_confirm: bool,
     safe: bool,
+    notify: bool,
+    pipeline_path: str | None,
 ) -> None:
     """Scan a target domain or IP address."""
     # Legal notice
@@ -146,12 +153,36 @@ def scan(
     report_path = report_dir / f"report.{ext_map[output_format]}"
     writer(result, report_path)
 
+    # Risk scoring
+    from argus_lite.core.risk_scorer import score_scan
+
+    risk = score_scan(result)
+    result.risk_summary = risk
+
+    # Re-generate report with risk data
+    writer(result, report_path)
+
+    # Display results
+    risk_colors = {"NONE": "green", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red"}
+    risk_color = risk_colors.get(risk.risk_level, "white")
+
     console.print(f"\n[bold]Scan {result.status}[/bold]")
+    console.print(f"[{risk_color}]Risk: {risk.risk_level} (score: {risk.overall_score})[/{risk_color}]")
     console.print(f"[dim]Report: {report_path}[/dim]")
 
     if result.errors:
         for err in result.errors:
             console.print(f"[yellow]  Stage '{err.stage}' error: {err.message}[/yellow]")
+
+    # Notifications
+    if notify or config.notifications.enabled:
+        from argus_lite.core.notifier import NotificationDispatcher
+
+        config.notifications.enabled = True
+        dispatcher = NotificationDispatcher(config.notifications)
+        if dispatcher.get_active_notifiers():
+            asyncio.get_event_loop().run_until_complete(dispatcher.notify_all(result))
+            console.print("[dim]Notifications sent[/dim]")
 
 
 @main.command()
@@ -259,6 +290,47 @@ def config_show() -> None:
     """Show current configuration."""
     cfg = _get_config()
     console.print(cfg.model_dump_json(indent=2))
+
+
+@main.group()
+def plugins() -> None:
+    """Manage plugins."""
+
+
+@plugins.command("list")
+def plugins_list() -> None:
+    """List installed plugins."""
+    from argus_lite.core.plugin_loader import PluginLoader
+
+    cfg = _get_config()
+    loader = PluginLoader([Path(d).expanduser() for d in cfg.plugins.plugin_dirs])
+    loaded = loader.load_all()
+
+    if not loaded:
+        console.print("[dim]No plugins found.[/dim]")
+        return
+
+    for name, plugin in loaded.items():
+        console.print(f"  {name} (v{plugin.version}) — stage: {plugin.stage}")
+
+
+@plugins.command("check")
+def plugins_check() -> None:
+    """Verify all plugins are loadable."""
+    from argus_lite.core.plugin_loader import PluginLoader
+
+    cfg = _get_config()
+    loader = PluginLoader([Path(d).expanduser() for d in cfg.plugins.plugin_dirs])
+    loaded = loader.load_all()
+
+    if not loaded:
+        console.print("[dim]No plugins found.[/dim]")
+        return
+
+    for name, plugin in loaded.items():
+        avail = plugin.check_available()
+        icon = "[green]OK[/green]" if avail else "[red]UNAVAILABLE[/red]"
+        console.print(f"  {name}: {icon}")
 
 
 if __name__ == "__main__":

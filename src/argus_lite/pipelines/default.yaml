@@ -1,0 +1,9 @@
+stages:
+  - name: recon
+    tools: [dig, whois, subfinder, dnsx, tlsx]
+  - name: discovery
+    tools: [httpx, katana, gau]
+  - name: analysis
+    tools: [naabu, whatweb, nuclei, ffuf, security_headers, ssl_check]
+  - name: report
+    auto: true
