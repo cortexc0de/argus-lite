@@ -79,6 +79,12 @@ class ApiKeysConfig(BaseModel):
     shodan: str = ""
     virustotal: str = ""
     nvd_api_key: str = ""
+    censys_api_id: str = ""
+    censys_api_secret: str = ""
+    zoomeye_api_key: str = ""
+    fofa_email: str = ""
+    fofa_api_key: str = ""
+    greynoise_api_key: str = ""
 
 
 class NotificationConfig(BaseModel):
@@ -162,6 +168,18 @@ def _apply_env_overrides(config: AppConfig) -> None:
     nvd_key = os.environ.get("ARGUS_NVD_KEY")
     if nvd_key:
         config.api_keys.nvd_api_key = nvd_key
+
+    for env_name, attr in [
+        ("ARGUS_CENSYS_ID", "censys_api_id"),
+        ("ARGUS_CENSYS_SECRET", "censys_api_secret"),
+        ("ARGUS_ZOOMEYE_KEY", "zoomeye_api_key"),
+        ("ARGUS_FOFA_EMAIL", "fofa_email"),
+        ("ARGUS_FOFA_KEY", "fofa_api_key"),
+        ("ARGUS_GREYNOISE_KEY", "greynoise_api_key"),
+    ]:
+        val = os.environ.get(env_name)
+        if val:
+            setattr(config.api_keys, attr, val)
 
     for env_name, attr in [
         ("ARGUS_TELEGRAM_TOKEN", "telegram_token"),

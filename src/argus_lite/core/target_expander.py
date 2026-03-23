@@ -67,6 +67,41 @@ class TargetExpander:
         """Expand a Shodan search query → list of IP addresses."""
         return await self._expand_shodan(query)
 
+    async def expand_censys(self, query: str) -> list[str]:
+        """Expand a Censys search query → list of IP addresses."""
+        from argus_lite.modules.recon.censys_api import censys_search
+        keys = self._config.api_keys
+        if not keys.censys_api_id or not keys.censys_api_secret:
+            logger.warning("Censys search requires ARGUS_CENSYS_ID + ARGUS_CENSYS_SECRET")
+            return []
+        results = await censys_search(query, api_id=keys.censys_api_id,
+                                      api_secret=keys.censys_api_secret,
+                                      max_results=self._max_targets)
+        return results[:self._max_targets]
+
+    async def expand_zoomeye(self, query: str) -> list[str]:
+        """Expand a ZoomEye dork → list of IP addresses."""
+        from argus_lite.modules.recon.zoomeye_api import zoomeye_search
+        api_key = self._config.api_keys.zoomeye_api_key
+        if not api_key:
+            logger.warning("ZoomEye search requires ARGUS_ZOOMEYE_KEY")
+            return []
+        results = await zoomeye_search(query, api_key=api_key,
+                                       max_results=self._max_targets)
+        return results[:self._max_targets]
+
+    async def expand_fofa(self, query: str) -> list[str]:
+        """Expand a FOFA query → list of IP addresses."""
+        from argus_lite.modules.recon.fofa_api import fofa_search
+        keys = self._config.api_keys
+        if not keys.fofa_email or not keys.fofa_api_key:
+            logger.warning("FOFA search requires ARGUS_FOFA_EMAIL + ARGUS_FOFA_KEY")
+            return []
+        results = await fofa_search(query, email=keys.fofa_email,
+                                    api_key=keys.fofa_api_key,
+                                    max_results=self._max_targets)
+        return results[:self._max_targets]
+
     # ------------------------------------------------------------------
     # Source type detection
     # ------------------------------------------------------------------

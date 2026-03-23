@@ -414,6 +414,75 @@ _HTML_TEMPLATE = Template("""\
 </div>
 {% endif %}
 
+<!-- OSINT Intelligence -->
+{% set recon = scan.recon %}
+{% if recon.censys_info or recon.zoomeye_info or recon.fofa_info or recon.greynoise_info or recon.shodan_info %}
+<div class="section">
+  <h2>OSINT Intelligence</h2>
+
+  {% if recon.greynoise_info and recon.greynoise_info.ip %}
+  <div style="margin-bottom:14px;">
+    <strong>GreyNoise</strong> —
+    {% set gn = recon.greynoise_info %}
+    {% if gn.riot %}<span style="color:var(--green)">✓ Known benign ({{ gn.name }})</span>
+    {% elif gn.noise and gn.classification == 'malicious' %}<span style="color:var(--red)">⚠ Known scanner/malicious</span>
+    {% elif gn.noise %}<span style="color:var(--yellow)">⚠ Observed scanning internet</span>
+    {% else %}<span style="color:var(--dim)">Not observed scanning</span>{% endif %}
+    {% if gn.last_seen %}<span style="color:var(--dim);font-size:12px;"> · last seen: {{ gn.last_seen }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if recon.censys_info and recon.censys_info.ip %}
+  <div style="margin-bottom:14px;">
+    <strong>Censys</strong> — <code>{{ recon.censys_info.ip }}</code>
+    {% if recon.censys_info.labels %} · labels: {{ recon.censys_info.labels | join(', ') }}{% endif %}
+    <br>
+    {% for svc in recon.censys_info.services %}
+    <span style="background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.2);padding:1px 8px;border-radius:10px;font-size:12px;margin:2px;">
+      {{ svc.port }}/{{ svc.transport }} {{ svc.service_name }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if recon.zoomeye_info and recon.zoomeye_info.total > 0 %}
+  <div style="margin-bottom:14px;">
+    <strong>ZoomEye</strong> — {{ recon.zoomeye_info.total }} results
+    <table style="margin-top:8px;">
+      <thead><tr><th>IP</th><th>Port</th><th>Service</th><th>Country</th></tr></thead>
+      <tbody>
+      {% for m in recon.zoomeye_info.matches[:5] %}
+      <tr><td><code>{{ m.ip }}</code></td><td>{{ m.port }}</td><td>{{ m.service }}</td><td>{{ m.country }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if recon.fofa_info and recon.fofa_info.total > 0 %}
+  <div style="margin-bottom:14px;">
+    <strong>FOFA</strong> — {{ recon.fofa_info.total }} results
+    <table style="margin-top:8px;">
+      <thead><tr><th>IP</th><th>Port</th><th>Protocol</th><th>Country</th><th>Product</th></tr></thead>
+      <tbody>
+      {% for r in recon.fofa_info.results[:5] %}
+      <tr><td><code>{{ r.ip }}</code></td><td>{{ r.port }}</td><td>{{ r.protocol }}</td><td>{{ r.country }}</td><td>{{ r.product }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if recon.shodan_info and recon.shodan_info.ip %}
+  <div style="margin-bottom:14px;">
+    <strong>Shodan</strong> — <code>{{ recon.shodan_info.ip }}</code>
+    {% if recon.shodan_info.org %} · {{ recon.shodan_info.org }}{% endif %}
+    {% if recon.shodan_info.ports %} · ports: {{ recon.shodan_info.ports | join(', ') }}{% endif %}
+    {% if recon.shodan_info.vulns %}<br><span style="color:var(--red)">CVEs: {{ recon.shodan_info.vulns | join(', ') }}</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Tool Status -->
 {% if scan.tools_used or scan.skipped_stages or scan.errors %}
 <div class="section">

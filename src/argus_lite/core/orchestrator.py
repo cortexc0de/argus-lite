@@ -174,11 +174,14 @@ class ScanOrchestrator:
             self._on_progress(name, "fail")
 
     async def _run_recon(self) -> None:
+        from argus_lite.modules.recon.censys_api import censys_lookup
         from argus_lite.modules.recon.certificates import certificate_info
         from argus_lite.modules.recon.dns import dns_enumerate
         from argus_lite.modules.recon.dnsx_resolve import parse_dnsx_output
+        from argus_lite.modules.recon.fofa_api import fofa_lookup
         from argus_lite.modules.recon.gau_urls import gau_discover
         from argus_lite.modules.recon.gowitness import gowitness_capture
+        from argus_lite.modules.recon.greynoise_api import greynoise_lookup
         from argus_lite.modules.recon.httpx_probe import httpx_probe, httpx_probe_multi
         from argus_lite.modules.recon.katana_crawl import katana_crawl
         from argus_lite.modules.recon.securitytrails_api import st_lookup
@@ -187,8 +190,9 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.tlsx_certs import tlsx_scan
         from argus_lite.modules.recon.virustotal_api import vt_lookup
         from argus_lite.modules.recon.whois import whois_lookup
+        from argus_lite.modules.recon.zoomeye_api import zoomeye_lookup
 
-        # Group 0: OSINT APIs (no tools needed, run in parallel, fire-and-forget)
+        # Group 0: OSINT APIs (no tools needed, run in parallel)
         api_tasks = []
         api_keys = self.config.api_keys
 
@@ -204,14 +208,40 @@ class ScanOrchestrator:
                 self._tools_used.append("virustotal-api")
             api_tasks.append(do_vt())
 
+        if api_keys.censys_api_id and api_keys.censys_api_secret:
+            async def do_censys():
+                self._recon_result.censys_info = await censys_lookup(
+                    self.target, api_id=api_keys.censys_api_id, api_secret=api_keys.censys_api_secret)
+                self._tools_used.append("censys-api")
+            api_tasks.append(do_censys())
+
+        if api_keys.zoomeye_api_key:
+            async def do_zoomeye():
+                self._recon_result.zoomeye_info = await zoomeye_lookup(
+                    self.target, api_key=api_keys.zoomeye_api_key)
+                self._tools_used.append("zoomeye-api")
+            api_tasks.append(do_zoomeye())
+
+        if api_keys.fofa_email and api_keys.fofa_api_key:
+            async def do_fofa():
+                self._recon_result.fofa_info = await fofa_lookup(
+                    self.target, email=api_keys.fofa_email, api_key=api_keys.fofa_api_key)
+                self._tools_used.append("fofa-api")
+            api_tasks.append(do_fofa())
+
+        # GreyNoise: enriches the main target IP (works even without API key via community endpoint)
+        async def do_greynoise():
+            self._recon_result.greynoise_info = await greynoise_lookup(
+                self.target, api_key=api_keys.greynoise_api_key)
+            self._tools_used.append("greynoise-api")
+        api_tasks.append(do_greynoise())
+
         async def do_st():
-            # SecurityTrails uses env var ARGUS_SECURITYTRAILS_KEY
             import os
             st_key = os.environ.get("ARGUS_SECURITYTRAILS_KEY", "")
             if st_key:
                 self._recon_result.securitytrails_info = await st_lookup(self.target, st_key)
                 self._tools_used.append("securitytrails-api")
-
         api_tasks.append(do_st())
 
         if api_tasks:

@@ -323,7 +323,10 @@ def run_template(ctx: click.Context, template_path: str, target: str | None) -> 
 
 @main.command("bulk")
 @click.argument("sources", nargs=-1)
-@click.option("--shodan", "shodan_query", default=None, help="Shodan search query (requires ARGUS_SHODAN_KEY)")
+@click.option("--shodan", "shodan_query", default=None, help="Shodan query (requires ARGUS_SHODAN_KEY)")
+@click.option("--censys", "censys_query", default=None, help="Censys query (requires ARGUS_CENSYS_ID + ARGUS_CENSYS_SECRET)")
+@click.option("--zoomeye", "zoomeye_query", default=None, help="ZoomEye dork (requires ARGUS_ZOOMEYE_KEY)")
+@click.option("--fofa", "fofa_query", default=None, help="FOFA query (requires ARGUS_FOFA_EMAIL + ARGUS_FOFA_KEY)")
 @click.option("--preset", type=click.Choice(["bulk", "quick", "web", "full", "recon"]), default="bulk",
               help="Scan preset for each target")
 @click.option("--concurrency", type=int, default=5, help="Max parallel scans")
@@ -333,13 +336,16 @@ def run_template(ctx: click.Context, template_path: str, target: str | None) -> 
 def bulk_scan(
     sources: tuple[str, ...],
     shodan_query: str | None,
+    censys_query: str | None,
+    zoomeye_query: str | None,
+    fofa_query: str | None,
     preset: str,
     concurrency: int,
     max_targets: int,
     output_format: str,
     no_confirm: bool,
 ) -> None:
-    """Bulk scan multiple targets: files, CIDRs, ASNs, or Shodan queries.
+    """Bulk scan multiple targets: files, CIDRs, ASNs, or OSINT queries.
 
     \b
     Examples:
@@ -347,7 +353,10 @@ def bulk_scan(
       argus bulk 192.168.1.0/24
       argus bulk AS12345
       argus bulk targets.txt 10.0.1.0/24 --preset web
-      argus bulk --shodan "org:MyCompany" --concurrency 3
+      argus bulk --shodan "org:MyCompany"
+      argus bulk --censys "services.port:443 AND labels:cloud"
+      argus bulk --zoomeye "hostname:example.com"
+      argus bulk --fofa 'domain="example.com"'
 
     Generates individual reports per target + a combined summary.html.
     IMPORTANT: Only scan systems you have written permission to test.
@@ -371,25 +380,34 @@ def bulk_scan(
     config.bulk.max_concurrent = concurrency
     config.bulk.max_targets = max_targets
 
-    # Build source list
-    all_sources = list(sources)
-    if shodan_query:
-        # Shodan handled via expand_shodan() separately
-        all_sources_for_expand = list(sources)
-    else:
-        all_sources_for_expand = all_sources
+    has_query = any([shodan_query, censys_query, zoomeye_query, fofa_query])
 
-    if not all_sources_for_expand and not shodan_query:
+    if not sources and not has_query:
         console.print("[red]No sources provided. Use positional args or --shodan.[/red]")
         raise SystemExit(1)
 
     # Expand targets
     expander = TargetExpander(config)
-    if shodan_query:
-        targets = asyncio.get_event_loop().run_until_complete(expander.expand_shodan(shodan_query))
+    targets: list[str] = []
+
+    # Expand positional sources (file, CIDR, ASN, plain hosts)
+    if sources:
         targets += asyncio.get_event_loop().run_until_complete(expander.expand(list(sources)))
-    else:
-        targets = asyncio.get_event_loop().run_until_complete(expander.expand(all_sources_for_expand))
+
+    # Expand OSINT queries
+    loop = asyncio.get_event_loop()
+    if shodan_query:
+        console.print(f"[dim]Querying Shodan: {shodan_query}[/dim]")
+        targets += loop.run_until_complete(expander.expand_shodan(shodan_query))
+    if censys_query:
+        console.print(f"[dim]Querying Censys: {censys_query}[/dim]")
+        targets += loop.run_until_complete(expander.expand_censys(censys_query))
+    if zoomeye_query:
+        console.print(f"[dim]Querying ZoomEye: {zoomeye_query}[/dim]")
+        targets += loop.run_until_complete(expander.expand_zoomeye(zoomeye_query))
+    if fofa_query:
+        console.print(f"[dim]Querying FOFA: {fofa_query}[/dim]")
+        targets += loop.run_until_complete(expander.expand_fofa(fofa_query))
 
     # Deduplicate & cap
     seen: set[str] = set()

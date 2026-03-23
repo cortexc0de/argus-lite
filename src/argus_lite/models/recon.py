@@ -116,6 +116,41 @@ class Screenshot(BaseModel):
     response_time_ms: int = 0
 
 
+class CensysServiceInfo(BaseModel):
+    port: int = 0
+    transport: str = ""
+    service_name: str = ""
+    banner: str = ""
+
+
+class CensysHostInfo(BaseModel):
+    ip: str = ""
+    services: list[CensysServiceInfo] = []
+    labels: list[str] = []
+    last_updated: str = ""
+    total_results: int = 0
+
+
+class ZoomEyeHostInfo(BaseModel):
+    total: int = 0
+    matches: list[dict] = []   # ip, portinfo.port, geoinfo.country/city
+
+
+class FofaHostInfo(BaseModel):
+    total: int = 0
+    results: list[dict] = []   # ip, port, protocol, country, city, product
+
+
+class GreyNoiseInfo(BaseModel):
+    ip: str = ""
+    noise: bool = False          # True = observed scanning the internet
+    riot: bool = False           # True = known benign service (CDN, DNS, etc.)
+    classification: str = ""     # benign | malicious | unknown
+    name: str = ""               # e.g. "Cloudflare", "Google Public DNS"
+    last_seen: str = ""
+    message: str = ""
+
+
 class ReconResult(BaseModel):
     """Aggregated result from recon module."""
 
@@ -132,3 +167,7 @@ class ReconResult(BaseModel):
     shodan_info: ShodanHostInfo | None = None
     virustotal_info: VirusTotalInfo | None = None
     securitytrails_info: SecurityTrailsInfo | None = None
+    censys_info: CensysHostInfo | None = None
+    zoomeye_info: ZoomEyeHostInfo | None = None
+    fofa_info: FofaHostInfo | None = None
+    greynoise_info: GreyNoiseInfo | None = None
