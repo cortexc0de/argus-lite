@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 
 from argus_lite.core.tool_runner import BaseToolRunner, ToolOutput
 from argus_lite.models.recon import Screenshot
+
+# gowitness needs Chrome/Chromium; give it a reasonable timeout
+_GOWITNESS_TIMEOUT = 60
 
 
 def parse_gowitness_output(raw: str) -> list[Screenshot]:
@@ -43,17 +48,39 @@ async def gowitness_capture(
     runner: BaseToolRunner | None = None,
     output_dir: str = "/tmp/argus-screenshots",
 ) -> list[Screenshot]:
-    """Run gowitness to capture screenshots of given URLs."""
+    """Run gowitness to capture screenshots of given URLs.
+
+    Uses a temp file for the URL list (avoids stdin blocking).
+    Timeout reduced to 60s (gowitness needs Chrome — if unavailable, fail fast).
+    """
     if runner is None:
         runner = BaseToolRunner(name="gowitness", path="/usr/local/bin/gowitness")
 
-    # Write URLs to stdin via file approach
-    url_list = "\n".join(urls)
+    if not urls:
+        return []
 
-    result: ToolOutput = await runner.run([
-        "scan", "file", "-f", "/dev/stdin",
-        "--screenshot-path", output_dir,
-        "--write-jsonl",
-        "--quiet",
-    ])
-    return parse_gowitness_output(result.stdout)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Write URLs to a temp file — avoids /dev/stdin blocking on subprocess
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, prefix="argus-urls-") as f:
+        f.write("\n".join(urls))
+        url_file = f.name
+
+    try:
+        result: ToolOutput = await runner.run(
+            [
+                "scan", "file",
+                "-f", url_file,
+                "--screenshot-path", output_dir,
+                "--write-jsonl",
+                "--quiet",
+                "--timeout", "10",
+            ],
+            timeout=_GOWITNESS_TIMEOUT,
+        )
+        return parse_gowitness_output(result.stdout)
+    finally:
+        try:
+            Path(url_file).unlink(missing_ok=True)
+        except Exception:
+            pass

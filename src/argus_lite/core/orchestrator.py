@@ -159,10 +159,19 @@ class ScanOrchestrator:
             return
         try:
             await coro
-        except ToolNotFoundError:
+        except ToolNotFoundError as e:
             logger.warning("Tool not found for subtask '%s', skipping", name)
+            self._skipped_stages.append(name)
+            self._on_progress(name, "skip")
         except Exception as e:
             logger.warning("Subtask '%s' failed: %s", name, e)
+            self._errors.append(
+                StageError(
+                    stage=name, error_type=type(e).__name__,
+                    message=str(e), timestamp=datetime.now(tz=timezone.utc),
+                )
+            )
+            self._on_progress(name, "fail")
 
     async def _run_recon(self) -> None:
         from argus_lite.modules.recon.certificates import certificate_info
@@ -216,14 +225,14 @@ class ScanOrchestrator:
                 runner = self._make_runner("dig", "/usr/bin/dig")
                 self._recon_result.dns_records = await dns_enumerate(self.target, runner=runner)
                 self._tools_used.append("dig")
-            group1.append(do_dns())
+            group1.append(self._run_subtask("dns", do_dns()))
 
         if self._is_enabled("whois"):
             async def do_whois():
                 runner = self._make_runner("whois", "/usr/bin/whois")
                 self._recon_result.whois_info = await whois_lookup(self.target, runner=runner)
                 self._tools_used.append("whois")
-            group1.append(do_whois())
+            group1.append(self._run_subtask("whois", do_whois()))
 
         if self._is_enabled("subdomains"):
             async def do_subdomains():
@@ -233,14 +242,14 @@ class ScanOrchestrator:
                 runner = self._make_runner("subfinder", str(cfg.path))
                 self._recon_result.subdomains = await subdomain_enumerate(self.target, runner=runner)
                 self._tools_used.append("subfinder")
-            group1.append(do_subdomains())
+            group1.append(self._run_subtask("subdomains", do_subdomains()))
 
         if self._is_enabled("certificates"):
             async def do_certs():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._recon_result.certificate_info = await certificate_info(self.target, runner=runner)
                 self._tools_used.append("openssl")
-            group1.append(do_certs())
+            group1.append(self._run_subtask("certificates", do_certs()))
 
         if group1:
             await run_parallel(group1)
@@ -263,7 +272,7 @@ class ScanOrchestrator:
                 else:
                     self._recon_result.http_probes = await httpx_probe(self.target, runner=runner)
                 self._tools_used.append("httpx")
-            group2.append(do_httpx())
+            group2.append(self._run_subtask("httpx", do_httpx()))
 
         if self._is_enabled("katana"):
             async def do_katana():
@@ -273,7 +282,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("katana", str(cfg.path))
                 self._recon_result.crawl_results = await katana_crawl(self.target, runner=runner)
                 self._tools_used.append("katana")
-            group2.append(do_katana())
+            group2.append(self._run_subtask("katana", do_katana()))
 
         if self._is_enabled("gau"):
             async def do_gau():
@@ -283,7 +292,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("gau", str(cfg.path))
                 self._recon_result.historical_urls = await gau_discover(self.target, runner=runner)
                 self._tools_used.append("gau")
-            group2.append(do_gau())
+            group2.append(self._run_subtask("gau", do_gau()))
 
         if self._is_enabled("dnsx"):
             async def do_dnsx():
@@ -295,7 +304,7 @@ class ScanOrchestrator:
                 result = await runner.run(["-json", "-silent", "-a", "-aaaa", "-cname"])
                 self._recon_result.dns_resolutions = parse_dnsx_output(result.stdout)
                 self._tools_used.append("dnsx")
-            group2.append(do_dnsx())
+            group2.append(self._run_subtask("dnsx", do_dnsx()))
 
         if self._is_enabled("tlsx"):
             async def do_tlsx():
@@ -306,11 +315,10 @@ class ScanOrchestrator:
                 runner = self._make_runner("tlsx", str(cfg.path))
                 self._recon_result.tls_certs = await tlsx_scan(targets, runner=runner)
                 self._tools_used.append("tlsx")
-            group2.append(do_tlsx())
+            group2.append(self._run_subtask("tlsx", do_tlsx()))
 
         if self._is_enabled("screenshots"):
             async def do_screenshots():
-                # Collect URLs from http_probes or use target
                 urls = [p.url for p in self._recon_result.http_probes]
                 if not urls:
                     urls = [f"https://{self.target}"]
@@ -319,7 +327,7 @@ class ScanOrchestrator:
                     urls, output_dir=str(home),
                 )
                 self._tools_used.append("gowitness")
-            group2.append(do_screenshots())
+            group2.append(self._run_subtask("screenshots", do_screenshots()))
 
         if group2:
             await run_parallel(group2)
@@ -357,7 +365,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("naabu", str(cfg.path))
                 self._analysis_result.open_ports = await port_scan(self.target, runner=runner)
                 self._tools_used.append("naabu")
-            group_a.append(do_ports())
+            group_a.append(self._run_subtask("ports", do_ports()))
 
         if self._is_enabled("techstack"):
             async def do_tech():
@@ -367,19 +375,19 @@ class ScanOrchestrator:
                 runner = self._make_runner("whatweb", str(cfg.path))
                 self._analysis_result.technologies = await tech_scan(self.target, runner=runner)
                 self._tools_used.append("whatweb")
-            group_a.append(do_tech())
+            group_a.append(self._run_subtask("techstack", do_tech()))
 
         if self._is_enabled("ssl"):
             async def do_ssl():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._analysis_result.ssl_info = await ssl_check(self.target, runner=runner)
-            group_a.append(do_ssl())
+            group_a.append(self._run_subtask("ssl", do_ssl()))
 
         if self._is_enabled("headers"):
             async def do_headers():
-                import httpx
+                import httpx as _httpx
                 try:
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+                    async with _httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
                         resp = await client.head(f"https://{self.target}")
                         raw = f"HTTP/{resp.http_version} {resp.status_code}\n"
                         raw += "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
@@ -391,7 +399,7 @@ class ScanOrchestrator:
                                 self._on_finding(f)
                 except Exception:
                     pass
-            group_a.append(do_headers())
+            group_a.append(self._run_subtask("headers", do_headers()))
 
         if group_a:
             await run_parallel(group_a)
@@ -405,7 +413,6 @@ class ScanOrchestrator:
                 if not cfg.enabled:
                     return
                 runner = self._make_runner("nuclei", str(cfg.path))
-                # Smart pipeline: scan all live hosts with tech-specific templates
                 live_urls = [p.url for p in self._recon_result.http_probes if p.status_code < 400]
                 tech_tags = self._extract_tech_tags()
                 if len(live_urls) > 1:
@@ -416,7 +423,7 @@ class ScanOrchestrator:
                     target = live_urls[0] if live_urls else f"https://{self.target}"
                     self._analysis_result.nuclei_findings = await nuclei_scan(target, runner=runner)
                 self._tools_used.append("nuclei")
-            group_b.append(do_nuclei())
+            group_b.append(self._run_subtask("nuclei", do_nuclei()))
 
         if self._is_enabled("ffuf"):
             async def do_ffuf():
@@ -424,7 +431,6 @@ class ScanOrchestrator:
                 if not cfg.enabled:
                     return
                 runner = self._make_runner("ffuf", str(cfg.path))
-                # Smart pipeline: use crawled paths as seed wordlist
                 seed_paths = [c.url for c in self._recon_result.crawl_results]
                 from urllib.parse import urlparse
                 seed_paths = [urlparse(u).path for u in seed_paths if urlparse(u).path]
@@ -437,7 +443,7 @@ class ScanOrchestrator:
                         f"https://{self.target}", runner=runner,
                     )
                 self._tools_used.append("ffuf")
-            group_b.append(do_ffuf())
+            group_b.append(self._run_subtask("ffuf", do_ffuf()))
 
         if group_b:
             await run_parallel(group_b)

@@ -414,13 +414,27 @@ _HTML_TEMPLATE = Template("""\
 </div>
 {% endif %}
 
-<!-- Errors -->
-{% if scan.errors %}
+<!-- Tool Status -->
+{% if scan.tools_used or scan.skipped_stages or scan.errors %}
 <div class="section">
-  <h2>Errors</h2>
-  {% for err in scan.errors %}
-  <div style="margin-bottom: 8px; color: var(--red);"><strong>{{ err.stage }}:</strong> {{ err.message }}</div>
-  {% endfor %}
+  <h2>Tool Status</h2>
+  <table>
+    <thead><tr><th>Tool / Stage</th><th>Status</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for t in scan.tools_used %}
+    <tr><td><code>{{ t }}</code></td><td><span style="color:var(--green)">✓ ran</span></td><td style="color:var(--dim)">—</td></tr>
+    {% endfor %}
+    {% for s in scan.skipped_stages %}
+    <tr><td><code>{{ s }}</code></td><td><span style="color:var(--yellow)">— skipped (not installed)</span></td><td style="color:var(--dim)">Run: <code>sudo ./install.sh</code></td></tr>
+    {% endfor %}
+    {% for err in scan.errors %}
+    <tr><td><code>{{ err.stage }}</code></td><td><span style="color:var(--red)">✗ {{ err.error_type }}</span></td><td style="color:var(--dim)">{{ err.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if scan.skipped_stages %}
+  <p style="color:var(--yellow);font-size:13px;margin-top:8px;">⚠ Some tools are not installed. Run <code>sudo ./install.sh</code> to get full scan results.</p>
+  {% endif %}
 </div>
 {% endif %}
 

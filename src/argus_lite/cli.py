@@ -260,7 +260,15 @@ def scan(
 
     console.print(f"\n[bold]Scan {result.status}[/bold]")
     console.print(f"[{risk_color}]Risk: {risk.risk_level} (score: {risk.overall_score})[/{risk_color}]")
+    if result.tools_used:
+        console.print(f"[dim]Tools: {', '.join(result.tools_used)}[/dim]")
     console.print(f"[dim]Report: {report_path}[/dim]")
+
+    if result.skipped_stages:
+        console.print(f"\n[yellow]Not installed (run sudo ./install.sh):[/yellow]")
+        for s in result.skipped_stages:
+            if s not in ("analysis", "recon", "cve_enrichment"):
+                console.print(f"  [yellow]  — {s}[/yellow]")
 
     if result.errors:
         for err in result.errors:
