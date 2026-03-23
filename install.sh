@@ -279,25 +279,38 @@ install_argus() {
     echo ""
     info "Installing Argus Lite..."
 
+    # Detect the real user (even when running under sudo)
+    local real_user="${SUDO_USER:-$(whoami)}"
+    local real_home
+    real_home=$(eval echo "~$real_user")
+
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         info "Directory exists, pulling latest..."
         cd "$INSTALL_DIR"
-        git pull --ff-only 2>/dev/null || warn "Git pull failed, using existing"
+        # Fix ownership if running as sudo
+        if [[ -n "$SUDO_USER" ]]; then
+            chown -R "$real_user:$real_user" "$INSTALL_DIR" 2>/dev/null || true
+        fi
+        sudo -u "$real_user" git pull --ff-only 2>/dev/null || warn "Git pull failed, using existing"
     else
         rm -rf "$INSTALL_DIR" 2>/dev/null || true
-        run_with_spinner "Cloning repository" git clone "$REPO_URL" "$INSTALL_DIR"
+        run_with_spinner "Cloning repository" sudo -u "$real_user" git clone "$REPO_URL" "$INSTALL_DIR"
         cd "$INSTALL_DIR"
     fi
 
     if [[ ! -d "$INSTALL_DIR/.venv" ]]; then
-        run_with_spinner "Creating Python venv" python3 -m venv "$INSTALL_DIR/.venv"
+        run_with_spinner "Creating Python venv" sudo -u "$real_user" python3 -m venv "$INSTALL_DIR/.venv"
     fi
 
-    # Force reinstall to recreate entry points after pyproject.toml changes
+    # Fix ownership before pip install
+    if [[ -n "$SUDO_USER" ]]; then
+        chown -R "$real_user:$real_user" "$INSTALL_DIR" 2>/dev/null || true
+    fi
+
+    # Run pip as the real user (not root) to avoid permission issues
     run_with_spinner "Installing Python dependencies" \
-        "$INSTALL_DIR/.venv/bin/pip" install --no-input --force-reinstall --no-deps -e .
-    # Install all deps (not force-reinstalled)
-    "$INSTALL_DIR/.venv/bin/pip" install --no-input -q -e ".[dev]" 2>/dev/null || true
+        sudo -u "$real_user" "$INSTALL_DIR/.venv/bin/pip" install --no-input --force-reinstall --no-deps -e .
+    sudo -u "$real_user" "$INSTALL_DIR/.venv/bin/pip" install --no-input -q -e ".[dev]" 2>/dev/null || true
 
     ok "Argus Lite installed"
 
@@ -328,7 +341,7 @@ WRAPPER
         warn "Symlink failed. Use: $INSTALL_DIR/.venv/bin/argus"
     fi
 
-    "$INSTALL_DIR/.venv/bin/argus" init 2>/dev/null || true
+    sudo -u "$real_user" "$INSTALL_DIR/.venv/bin/argus" init 2>/dev/null || true
     ok "Config: ~/.argus-lite/"
 }
 
