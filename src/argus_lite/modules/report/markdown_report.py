@@ -49,6 +49,31 @@ def generate_markdown_report(scan: ScanResult) -> str:
         lines.append("| Findings | None |")
     lines.append("")
 
+    # AI Analysis
+    ai = scan.ai_analysis
+    if ai and ai.executive_summary:
+        lines.append("## AI Analysis")
+        lines.append(f"*Model: {ai.model_used} | {ai.tokens_used} tokens*")
+        lines.append("")
+        lines.append(f"> {ai.executive_summary}")
+        lines.append("")
+        if ai.attack_chains:
+            lines.append("### Attack Chains")
+            for chain in ai.attack_chains:
+                lines.append(f"**{chain.name}** ({chain.severity}/{chain.likelihood})")
+                for i, step in enumerate(chain.steps, 1):
+                    lines.append(f"  {i}. {step}")
+                lines.append("")
+        if ai.recommendations:
+            lines.append("### Recommendations")
+            for rec in ai.recommendations:
+                lines.append(f"- {rec}")
+            lines.append("")
+        if ai.trend_analysis:
+            lines.append("### Trend Analysis")
+            lines.append(ai.trend_analysis)
+            lines.append("")
+
     # Findings (most important — goes first)
     if scan.findings:
         lines.append("## Findings")

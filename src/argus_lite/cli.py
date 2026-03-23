@@ -66,6 +66,7 @@ def main() -> None:
 @click.option("--pipeline", "pipeline_path", type=click.Path(exists=True), default=None, help="Custom pipeline YAML")
 @click.option("--resume", "resume_id", default=None, help="Resume interrupted scan by scan-id")
 @click.option("--templates", multiple=True, help="Custom nuclei template paths")
+@click.option("--ai", "use_ai", is_flag=True, default=False, help="Enable AI analysis of results")
 def scan(
     target: str,
     preset: str,
@@ -78,6 +79,7 @@ def scan(
     pipeline_path: str | None,
     resume_id: str | None,
     templates: tuple[str, ...],
+    use_ai: bool,
 ) -> None:
     """Scan a target domain or IP address."""
     # Legal notice
@@ -209,7 +211,23 @@ def scan(
     risk = score_scan(result)
     result.risk_summary = risk
 
-    # Re-generate report with risk data
+    # AI Analysis (optional)
+    if use_ai or config.ai.enabled:
+        from argus_lite.core.ai_analyzer import AIAnalyzer
+
+        if config.ai.api_key:
+            console.print("[cyan]Running AI analysis...[/cyan]")
+            analyzer = AIAnalyzer(config.ai)
+            ai_result = asyncio.get_event_loop().run_until_complete(analyzer.analyze(result))
+            result.ai_analysis = ai_result
+            if ai_result.executive_summary:
+                console.print(f"[green]AI analysis complete ({ai_result.model_used}, {ai_result.tokens_used} tokens)[/green]")
+            else:
+                console.print("[yellow]AI analysis returned no results[/yellow]")
+        else:
+            console.print("[yellow]AI enabled but no API key set (ARGUS_AI_KEY)[/yellow]")
+
+    # Re-generate report with risk + AI data
     writer(result, report_path)
 
     # Display results

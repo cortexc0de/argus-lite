@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from argus_lite.models.ai import AIAnalysis
 from argus_lite.models.analysis import AnalysisResult
 from argus_lite.models.finding import Finding, Vulnerability
 from argus_lite.models.recon import ReconResult
@@ -51,6 +52,9 @@ class ScanResult(BaseModel):
 
     # Risk assessment
     risk_summary: RiskSummary | None = None
+
+    # AI analysis
+    ai_analysis: AIAnalysis | None = None
 
     # Partial results support
     completed_stages: list[str] = []

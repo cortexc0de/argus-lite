@@ -93,6 +93,15 @@ class PluginConfig(BaseModel):
     plugin_dirs: list[str] = ["~/.argus-lite/plugins"]
 
 
+class AIConfig(BaseModel):
+    enabled: bool = False
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-4o"
+    api_key: str = ""
+    max_tokens: int = 4096
+    timeout: int = 120
+
+
 class AppConfig(BaseModel):
     general: GeneralConfig = GeneralConfig()
     security: SecurityConfig = SecurityConfig()
@@ -102,6 +111,7 @@ class AppConfig(BaseModel):
     api_keys: ApiKeysConfig = ApiKeysConfig()
     notifications: NotificationConfig = NotificationConfig()
     plugins: PluginConfig = PluginConfig()
+    ai: AIConfig = AIConfig()
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -151,6 +161,16 @@ def _apply_env_overrides(config: AppConfig) -> None:
         val = os.environ.get(env_name)
         if val:
             setattr(config.notifications, attr, val)
+
+    # AI overrides
+    for env_name, attr in [
+        ("ARGUS_AI_KEY", "api_key"),
+        ("ARGUS_AI_URL", "base_url"),
+        ("ARGUS_AI_MODEL", "model"),
+    ]:
+        val = os.environ.get(env_name)
+        if val:
+            setattr(config.ai, attr, val)
 
 
 def _check_permissions(config_path: Path) -> None:

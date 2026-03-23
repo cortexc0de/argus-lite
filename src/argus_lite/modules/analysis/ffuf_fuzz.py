@@ -52,3 +52,55 @@ async def ffuf_scan(
         ["-u", f"{target}/FUZZ", "-w", wordlist, "-o", "-", "-of", "json", "-s"]
     )
     return parse_ffuf_output(result.stdout)
+
+
+async def ffuf_scan_with_seeds(
+    target: str,
+    runner: BaseToolRunner | None = None,
+    seed_paths: list[str] | None = None,
+    base_wordlist: str = "/usr/share/wordlists/dirb/common.txt",
+) -> list[FfufResult]:
+    """Run ffuf with seed paths from crawling added to the wordlist."""
+    import tempfile
+    from pathlib import Path
+    from urllib.parse import urlparse
+
+    if runner is None:
+        runner = BaseToolRunner(name="ffuf", path="/usr/bin/ffuf")
+
+    wordlist = base_wordlist
+
+    if seed_paths:
+        # Extract unique path segments from crawled URLs
+        seeds: set[str] = set()
+        for p in seed_paths:
+            cleaned = p.strip("/")
+            if cleaned:
+                seeds.add(cleaned)
+                # Also add parent dirs
+                parts = cleaned.split("/")
+                for i in range(len(parts)):
+                    segment = "/".join(parts[: i + 1])
+                    if segment:
+                        seeds.add(segment)
+
+        if seeds:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+            try:
+                # Read base wordlist if it exists
+                base = Path(base_wordlist)
+                if base.exists():
+                    tmp.write(base.read_text())
+                    if not tmp.name.endswith("\n"):
+                        tmp.write("\n")
+                # Append seeds
+                tmp.write("\n".join(sorted(seeds)))
+                tmp.close()
+                wordlist = tmp.name
+            except Exception:
+                wordlist = base_wordlist
+
+    result: ToolOutput = await runner.run(
+        ["-u", f"{target}/FUZZ", "-w", wordlist, "-o", "-", "-of", "json", "-s"]
+    )
+    return parse_ffuf_output(result.stdout)

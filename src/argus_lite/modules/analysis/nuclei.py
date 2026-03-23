@@ -83,3 +83,52 @@ async def nuclei_scan(
 
     # Double enforcement: parse also filters
     return parse_nuclei_output(result.stdout)
+
+
+def build_nuclei_args_multi(
+    targets_file: str,
+    templates: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> list[str]:
+    """Build nuclei args for multi-target scan."""
+    args = [
+        "-l", targets_file,
+        "-severity", "info,low",
+        "-jsonl",
+        "-silent",
+    ]
+    if templates:
+        for t in templates:
+            args.extend(["-t", t])
+    if tags:
+        args.extend(["-tags", ",".join(tags)])
+    return args
+
+
+async def nuclei_scan_multi(
+    targets: list[str],
+    runner: BaseToolRunner | None = None,
+    templates: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> list[NucleiFinding]:
+    """Run nuclei against multiple targets. ONLY info/low severity returned."""
+    import tempfile
+    from pathlib import Path
+
+    if runner is None:
+        runner = BaseToolRunner(name="nuclei", path="/usr/bin/nuclei")
+
+    if not targets:
+        return []
+
+    unique = list(dict.fromkeys(targets))
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+    try:
+        tmp.write("\n".join(unique))
+        tmp.close()
+
+        args = build_nuclei_args_multi(tmp.name, templates, tags)
+        result: ToolOutput = await runner.run(args)
+        return parse_nuclei_output(result.stdout)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)

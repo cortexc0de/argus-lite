@@ -108,4 +108,5 @@ class TestParallelExecution:
             mock_par.return_value = []
             asyncio.get_event_loop().run_until_complete(orch._run_analysis())
 
-        assert mock_par.call_count == 1
+        # Group A (ports/tech/ssl/headers) + Group B (nuclei/ffuf) = 2 calls
+        assert mock_par.call_count == 2

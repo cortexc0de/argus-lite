@@ -119,6 +119,37 @@ _HTML_TEMPLATE = Template("""\
   {% if stats.subdomains %}<div class="card"><div class="num">{{ stats.subdomains }}</div><div class="label">Subdomains</div></div>{% endif %}
 </div>
 
+<!-- AI Analysis -->
+{% if scan.ai_analysis and scan.ai_analysis.executive_summary %}
+<div class="section" style="border-left: 3px solid var(--accent);">
+  <h2>AI Analysis <span style="font-size:12px;color:var(--dim);font-weight:normal;">{{ scan.ai_analysis.model_used }} | {{ scan.ai_analysis.tokens_used }} tokens</span></h2>
+  <div style="background:rgba(88,166,255,0.08);border-radius:8px;padding:16px;margin-bottom:16px;">
+    <p>{{ scan.ai_analysis.executive_summary }}</p>
+  </div>
+  {% if scan.ai_analysis.attack_chains %}
+  <h3 style="margin-top:16px;font-size:15px;">Attack Chains</h3>
+  {% for chain in scan.ai_analysis.attack_chains %}
+  <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
+    <strong>{{ chain.name }}</strong> <span class="badge badge-{{ chain.severity | lower if chain.severity in ['info','low'] else 'low' }}">{{ chain.severity }} / {{ chain.likelihood }}</span>
+    <ol style="margin:8px 0 0 20px;color:var(--dim);">
+      {% for step in chain.steps %}<li>{{ step }}</li>{% endfor %}
+    </ol>
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% if scan.ai_analysis.recommendations %}
+  <h3 style="margin-top:16px;font-size:15px;">Recommendations</h3>
+  <ul style="margin:8px 0 0 20px;">
+    {% for rec in scan.ai_analysis.recommendations %}<li>{{ rec }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if scan.ai_analysis.trend_analysis %}
+  <h3 style="margin-top:16px;font-size:15px;">Trend Analysis</h3>
+  <p style="color:var(--dim);">{{ scan.ai_analysis.trend_analysis }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Findings -->
 {% if scan.findings %}
 <div class="section">

@@ -63,7 +63,7 @@ async def httpx_probe(
     target: str,
     runner: BaseToolRunner | None = None,
 ) -> list[HttpProbe]:
-    """Run httpx and parse HTTP probe results for a target."""
+    """Run httpx and parse HTTP probe results for a single target."""
     if runner is None:
         runner = BaseToolRunner(name="httpx", path="/usr/bin/httpx")
 
@@ -72,3 +72,35 @@ async def httpx_probe(
          "-status-code", "-content-length"]
     )
     return parse_httpx_output(result.stdout)
+
+
+async def httpx_probe_multi(
+    targets: list[str],
+    runner: BaseToolRunner | None = None,
+) -> list[HttpProbe]:
+    """Run httpx against multiple targets via temp file."""
+    import tempfile
+    from pathlib import Path
+
+    if runner is None:
+        runner = BaseToolRunner(name="httpx", path="/usr/bin/httpx")
+
+    if not targets:
+        return []
+
+    # Deduplicate
+    unique = list(dict.fromkeys(targets))
+
+    # Write targets to temp file
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+    try:
+        tmp.write("\n".join(unique))
+        tmp.close()
+
+        result: ToolOutput = await runner.run(
+            ["-l", tmp.name, "-json", "-silent", "-title", "-tech-detect",
+             "-status-code", "-content-length"]
+        )
+        return parse_httpx_output(result.stdout)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)

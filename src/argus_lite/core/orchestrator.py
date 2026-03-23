@@ -154,7 +154,7 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.dnsx_resolve import parse_dnsx_output
         from argus_lite.modules.recon.gau_urls import gau_discover
         from argus_lite.modules.recon.gowitness import gowitness_capture
-        from argus_lite.modules.recon.httpx_probe import httpx_probe
+        from argus_lite.modules.recon.httpx_probe import httpx_probe, httpx_probe_multi
         from argus_lite.modules.recon.katana_crawl import katana_crawl
         from argus_lite.modules.recon.securitytrails_api import st_lookup
         from argus_lite.modules.recon.shodan_api import shodan_lookup
@@ -238,7 +238,14 @@ class ScanOrchestrator:
                 if not cfg.enabled:
                     return
                 runner = self._make_runner("httpx", str(cfg.path))
-                self._recon_result.http_probes = await httpx_probe(self.target, runner=runner)
+                # Smart pipeline: probe all subdomains, not just main target
+                targets = [s.name for s in self._recon_result.subdomains]
+                if self.target not in targets:
+                    targets.append(self.target)
+                if len(targets) > 1:
+                    self._recon_result.http_probes = await httpx_probe_multi(targets, runner=runner)
+                else:
+                    self._recon_result.http_probes = await httpx_probe(self.target, runner=runner)
                 self._tools_used.append("httpx")
             group2.append(do_httpx())
 
@@ -301,9 +308,20 @@ class ScanOrchestrator:
         if group2:
             await run_parallel(group2)
 
+    def _extract_tech_tags(self) -> list[str]:
+        """Extract known technology tags for nuclei template targeting."""
+        known = {"wordpress", "php", "apache", "nginx", "joomla", "drupal",
+                 "iis", "tomcat", "flask", "django", "laravel", "spring"}
+        tags = []
+        for tech in self._analysis_result.technologies:
+            name = tech.name.lower()
+            if name in known:
+                tags.append(name)
+        return tags
+
     async def _run_analysis(self) -> None:
-        from argus_lite.modules.analysis.ffuf_fuzz import ffuf_scan
-        from argus_lite.modules.analysis.nuclei import nuclei_scan
+        from argus_lite.modules.analysis.ffuf_fuzz import ffuf_scan, ffuf_scan_with_seeds
+        from argus_lite.modules.analysis.nuclei import nuclei_scan, nuclei_scan_multi
         from argus_lite.modules.analysis.ports import port_scan
         from argus_lite.modules.analysis.security_headers import (
             analyze_security_headers,
@@ -312,8 +330,8 @@ class ScanOrchestrator:
         from argus_lite.modules.analysis.ssl import ssl_check
         from argus_lite.modules.analysis.techstack import tech_scan
 
-        # All analysis tasks are independent — run in parallel
-        tasks = []
+        # Group A: ports, techstack, headers, ssl (independent, parallel)
+        group_a = []
 
         if self._is_enabled("ports"):
             async def do_ports():
@@ -323,7 +341,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("naabu", str(cfg.path))
                 self._analysis_result.open_ports = await port_scan(self.target, runner=runner)
                 self._tools_used.append("naabu")
-            tasks.append(do_ports())
+            group_a.append(do_ports())
 
         if self._is_enabled("techstack"):
             async def do_tech():
@@ -333,13 +351,13 @@ class ScanOrchestrator:
                 runner = self._make_runner("whatweb", str(cfg.path))
                 self._analysis_result.technologies = await tech_scan(self.target, runner=runner)
                 self._tools_used.append("whatweb")
-            tasks.append(do_tech())
+            group_a.append(do_tech())
 
         if self._is_enabled("ssl"):
             async def do_ssl():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._analysis_result.ssl_info = await ssl_check(self.target, runner=runner)
-            tasks.append(do_ssl())
+            group_a.append(do_ssl())
 
         if self._is_enabled("headers"):
             async def do_headers():
@@ -353,7 +371,13 @@ class ScanOrchestrator:
                         self._findings.extend(security_headers_findings(raw, asset=self.target))
                 except Exception:
                     pass
-            tasks.append(do_headers())
+            group_a.append(do_headers())
+
+        if group_a:
+            await run_parallel(group_a)
+
+        # Group B: nuclei (uses tech tags from A) + ffuf (uses crawl seeds)
+        group_b = []
 
         if self._is_enabled("nuclei"):
             async def do_nuclei():
@@ -361,9 +385,18 @@ class ScanOrchestrator:
                 if not cfg.enabled:
                     return
                 runner = self._make_runner("nuclei", str(cfg.path))
-                self._analysis_result.nuclei_findings = await nuclei_scan(self.target, runner=runner)
+                # Smart pipeline: scan all live hosts with tech-specific templates
+                live_urls = [p.url for p in self._recon_result.http_probes if p.status_code < 400]
+                tech_tags = self._extract_tech_tags()
+                if len(live_urls) > 1:
+                    self._analysis_result.nuclei_findings = await nuclei_scan_multi(
+                        live_urls, runner=runner, tags=tech_tags or None,
+                    )
+                else:
+                    target = live_urls[0] if live_urls else f"https://{self.target}"
+                    self._analysis_result.nuclei_findings = await nuclei_scan(target, runner=runner)
                 self._tools_used.append("nuclei")
-            tasks.append(do_nuclei())
+            group_b.append(do_nuclei())
 
         if self._is_enabled("ffuf"):
             async def do_ffuf():
@@ -371,14 +404,23 @@ class ScanOrchestrator:
                 if not cfg.enabled:
                     return
                 runner = self._make_runner("ffuf", str(cfg.path))
-                self._analysis_result.fuzz_results = await ffuf_scan(
-                    f"https://{self.target}", runner=runner,
-                )
+                # Smart pipeline: use crawled paths as seed wordlist
+                seed_paths = [c.url for c in self._recon_result.crawl_results]
+                from urllib.parse import urlparse
+                seed_paths = [urlparse(u).path for u in seed_paths if urlparse(u).path]
+                if seed_paths:
+                    self._analysis_result.fuzz_results = await ffuf_scan_with_seeds(
+                        f"https://{self.target}", runner=runner, seed_paths=seed_paths,
+                    )
+                else:
+                    self._analysis_result.fuzz_results = await ffuf_scan(
+                        f"https://{self.target}", runner=runner,
+                    )
                 self._tools_used.append("ffuf")
-            tasks.append(do_ffuf())
+            group_b.append(do_ffuf())
 
-        if tasks:
-            await run_parallel(tasks)
+        if group_b:
+            await run_parallel(group_b)
 
     def _make_runner(self, name: str, default_path: str) -> BaseToolRunner:
         return BaseToolRunner(name=name, path=default_path)
