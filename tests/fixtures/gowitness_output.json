@@ -1,0 +1,4 @@
+{"url":"https://example.com","final_url":"https://example.com/","status_code":200,"title":"Example Domain","filename":"example.com.png","screenshot_path":"/tmp/screenshots/example.com.png","response_time_ms":245}
+{"url":"https://www.example.com","final_url":"https://www.example.com/","status_code":200,"title":"Example Domain","filename":"www.example.com.png","screenshot_path":"/tmp/screenshots/www.example.com.png","response_time_ms":312}
+{"url":"https://mail.example.com","final_url":"https://mail.example.com/login","status_code":200,"title":"Webmail Login","filename":"mail.example.com.png","screenshot_path":"/tmp/screenshots/mail.example.com.png","response_time_ms":520}
+{"url":"https://api.example.com","final_url":"https://api.example.com/","status_code":403,"title":"Forbidden","filename":"api.example.com.png","screenshot_path":"/tmp/screenshots/api.example.com.png","response_time_ms":89}

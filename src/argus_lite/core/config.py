@@ -72,6 +72,7 @@ class ToolsConfig(BaseModel):
     gau: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gau"))
     dnsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/dnsx"))
     tlsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/tlsx"))
+    gowitness: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gowitness"))
 
 
 class ApiKeysConfig(BaseModel):

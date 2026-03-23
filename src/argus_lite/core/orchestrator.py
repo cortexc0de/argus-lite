@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from argus_lite.core.concurrent import run_parallel
@@ -24,7 +25,7 @@ PRESETS: dict[str, dict[str, list[str]]] = {
         "analysis": ["headers", "techstack", "ssl"],
     },
     "full": {
-        "recon": ["dns", "whois", "subdomains", "certificates", "httpx", "katana", "gau", "dnsx", "tlsx"],
+        "recon": ["dns", "whois", "subdomains", "certificates", "httpx", "katana", "gau", "dnsx", "tlsx", "screenshots"],
         "analysis": ["ports", "techstack", "headers", "ssl", "nuclei", "ffuf"],
     },
     "recon": {
@@ -32,7 +33,7 @@ PRESETS: dict[str, dict[str, list[str]]] = {
         "analysis": [],
     },
     "web": {
-        "recon": ["dns", "certificates", "httpx", "katana"],
+        "recon": ["dns", "certificates", "httpx", "katana", "screenshots"],
         "analysis": ["headers", "ssl", "techstack", "nuclei"],
     },
 }
@@ -73,6 +74,7 @@ class ScanOrchestrator:
             "gau": "gau", "dnsx": "dnsx", "tlsx": "tlsx",
             "ports": "naabu", "techstack": "whatweb", "headers": "headers",
             "ssl": "ssl_check", "nuclei": "nuclei", "ffuf": "ffuf",
+            "screenshots": "gowitness",
         }
         for stage_tools in preset_def.values():
             for subtask in stage_tools:
@@ -151,6 +153,7 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.dns import dns_enumerate
         from argus_lite.modules.recon.dnsx_resolve import parse_dnsx_output
         from argus_lite.modules.recon.gau_urls import gau_discover
+        from argus_lite.modules.recon.gowitness import gowitness_capture
         from argus_lite.modules.recon.httpx_probe import httpx_probe
         from argus_lite.modules.recon.katana_crawl import katana_crawl
         from argus_lite.modules.recon.securitytrails_api import st_lookup
@@ -281,6 +284,19 @@ class ScanOrchestrator:
                 self._recon_result.tls_certs = await tlsx_scan(targets, runner=runner)
                 self._tools_used.append("tlsx")
             group2.append(do_tlsx())
+
+        if self._is_enabled("screenshots"):
+            async def do_screenshots():
+                # Collect URLs from http_probes or use target
+                urls = [p.url for p in self._recon_result.http_probes]
+                if not urls:
+                    urls = [f"https://{self.target}"]
+                home = Path.home() / ".argus-lite" / "scans" / self._scan_id / "screenshots"
+                self._recon_result.screenshots = await gowitness_capture(
+                    urls, output_dir=str(home),
+                )
+                self._tools_used.append("gowitness")
+            group2.append(do_screenshots())
 
         if group2:
             await run_parallel(group2)

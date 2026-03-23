@@ -16,7 +16,7 @@
 
 ## Nice to Have
 
-- [ ] **P9: Screenshot capture** — gowitness/aquatone интеграция для скриншотов
+- [x] **P9: Screenshot capture** — gowitness (full/web presets, gallery in HTML report)
 - [x] **P10: CI/CD SARIF output** — `argus scan --output sarif` для GitHub Security
 - [x] **P11: Incremental scanning** — diff engine (new/resolved/unchanged findings)
 - [x] **P12: Web dashboard** — `argus dashboard` — Flask UI (dark theme)

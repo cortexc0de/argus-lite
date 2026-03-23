@@ -286,6 +286,22 @@ _HTML_TEMPLATE = Template("""\
 </details>
 {% endif %}
 
+<!-- Screenshots -->
+{% if scan.recon.screenshots %}
+<div class="section">
+  <h2>Screenshots</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">
+    {% for s in scan.recon.screenshots %}
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+      <div style="font-weight:600;margin-bottom:4px;">{{ s.title or s.url }}</div>
+      <div style="color:var(--dim);font-size:12px;margin-bottom:8px;"><code>{{ s.url }}</code> ({{ s.status_code }})</div>
+      <img src="file://{{ s.screenshot_path }}" alt="{{ s.url }}" style="width:100%;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'">
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Subdomains -->
 {% if scan.recon.subdomains %}
 <details>

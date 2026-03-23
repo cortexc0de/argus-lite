@@ -251,6 +251,10 @@ install_security_tools() {
         "ffuf/ffuf" \
         "https://github.com/ffuf/ffuf/releases/download/{VERSION}/ffuf_{VER}_{OS}_{ARCH}.tar.gz"
 
+    install_binary "gowitness" \
+        "sensepost/gowitness" \
+        "https://github.com/sensepost/gowitness/releases/download/{VERSION}/gowitness-{VER}-{OS}-{ARCH}"
+
     # Set naabu raw socket capability
     if [[ -x "$BIN_DIR/naabu" ]]; then
         sudo setcap cap_net_raw=ep "$BIN_DIR/naabu" 2>/dev/null && \

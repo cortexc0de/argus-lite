@@ -106,6 +106,16 @@ class SecurityTrailsInfo(BaseModel):
     subdomain_count: int = 0
 
 
+class Screenshot(BaseModel):
+    url: str
+    final_url: str = ""
+    status_code: int = 0
+    title: str = ""
+    filename: str = ""
+    screenshot_path: str = ""
+    response_time_ms: int = 0
+
+
 class ReconResult(BaseModel):
     """Aggregated result from recon module."""
 
@@ -118,6 +128,7 @@ class ReconResult(BaseModel):
     historical_urls: list[HistoricalUrl] = []
     dns_resolutions: list[DnsResolution] = []
     tls_certs: list[TlsCert] = []
+    screenshots: list[Screenshot] = []
     shodan_info: ShodanHostInfo | None = None
     virustotal_info: VirusTotalInfo | None = None
     securitytrails_info: SecurityTrailsInfo | None = None
