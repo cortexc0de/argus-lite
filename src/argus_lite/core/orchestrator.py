@@ -36,6 +36,10 @@ PRESETS: dict[str, dict[str, list[str]]] = {
         "recon": ["dns", "certificates", "httpx", "katana", "screenshots"],
         "analysis": ["headers", "ssl", "techstack", "nuclei"],
     },
+    "bulk": {
+        "recon": ["dns", "httpx"],
+        "analysis": ["techstack", "headers", "nuclei"],
+    },
 }
 
 

@@ -103,6 +103,11 @@ class AIConfig(BaseModel):
     timeout: int = 120
 
 
+class BulkConfig(BaseModel):
+    max_concurrent: int = 5
+    max_targets: int = 50
+
+
 class AppConfig(BaseModel):
     general: GeneralConfig = GeneralConfig()
     security: SecurityConfig = SecurityConfig()
@@ -113,6 +118,7 @@ class AppConfig(BaseModel):
     notifications: NotificationConfig = NotificationConfig()
     plugins: PluginConfig = PluginConfig()
     ai: AIConfig = AIConfig()
+    bulk: BulkConfig = BulkConfig()
 
 
 def load_config(config_path: Path) -> AppConfig:

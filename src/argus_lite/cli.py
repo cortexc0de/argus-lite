@@ -307,6 +307,159 @@ def run_template(ctx: click.Context, template_path: str, target: str | None) -> 
     )
 
 
+@main.command("bulk")
+@click.argument("sources", nargs=-1)
+@click.option("--shodan", "shodan_query", default=None, help="Shodan search query (requires ARGUS_SHODAN_KEY)")
+@click.option("--preset", type=click.Choice(["bulk", "quick", "web", "full", "recon"]), default="bulk",
+              help="Scan preset for each target")
+@click.option("--concurrency", type=int, default=5, help="Max parallel scans")
+@click.option("--max-targets", type=int, default=50, help="Maximum targets to scan")
+@click.option("--output", "output_format", type=click.Choice(["json", "md", "html", "sarif"]), default="html")
+@click.option("--no-confirm", is_flag=True, default=False, help="Skip confirmation prompt")
+def bulk_scan(
+    sources: tuple[str, ...],
+    shodan_query: str | None,
+    preset: str,
+    concurrency: int,
+    max_targets: int,
+    output_format: str,
+    no_confirm: bool,
+) -> None:
+    """Bulk scan multiple targets: files, CIDRs, ASNs, or Shodan queries.
+
+    \b
+    Examples:
+      argus bulk targets.txt
+      argus bulk 192.168.1.0/24
+      argus bulk AS12345
+      argus bulk targets.txt 10.0.1.0/24 --preset web
+      argus bulk --shodan "org:MyCompany" --concurrency 3
+
+    Generates individual reports per target + a combined summary.html.
+    IMPORTANT: Only scan systems you have written permission to test.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
+
+    from argus_lite.core.bulk_scanner import BulkScanner
+    from argus_lite.core.target_expander import TargetExpander
+    from argus_lite.modules.report.bulk_report import write_bulk_report
+    from argus_lite.modules.report.html_report import write_html_report
+    from argus_lite.modules.report.json_report import write_json_report
+    from argus_lite.modules.report.markdown_report import write_markdown_report
+    from argus_lite.modules.report.sarif_report import write_sarif_report
+
+    console.print(f"[yellow]{LEGAL_NOTICE}[/yellow]")
+
+    config = _get_config()
+    config.bulk.max_concurrent = concurrency
+    config.bulk.max_targets = max_targets
+
+    # Build source list
+    all_sources = list(sources)
+    if shodan_query:
+        # Shodan handled via expand_shodan() separately
+        all_sources_for_expand = list(sources)
+    else:
+        all_sources_for_expand = all_sources
+
+    if not all_sources_for_expand and not shodan_query:
+        console.print("[red]No sources provided. Use positional args or --shodan.[/red]")
+        raise SystemExit(1)
+
+    # Expand targets
+    expander = TargetExpander(config)
+    if shodan_query:
+        targets = asyncio.get_event_loop().run_until_complete(expander.expand_shodan(shodan_query))
+        targets += asyncio.get_event_loop().run_until_complete(expander.expand(list(sources)))
+    else:
+        targets = asyncio.get_event_loop().run_until_complete(expander.expand(all_sources_for_expand))
+
+    # Deduplicate & cap
+    seen: set[str] = set()
+    unique_targets: list[str] = []
+    for t in targets:
+        if t not in seen:
+            seen.add(t)
+            unique_targets.append(t)
+        if len(unique_targets) >= max_targets:
+            break
+
+    if not unique_targets:
+        console.print("[red]No valid targets found after expansion.[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold green]Bulk scan: {len(unique_targets)} targets | preset: {preset}[/bold green]")
+    console.print()
+
+    if not no_confirm:
+        if not click.confirm(f"Scan {len(unique_targets)} targets with preset '{preset}'?"):
+            console.print("[yellow]Bulk scan cancelled.[/yellow]")
+            return
+
+    # Setup output directory
+    home = _get_argus_home()
+    import uuid as _uuid
+    bulk_id_short = str(_uuid.uuid4())[:8]
+    bulk_dir = Path(home) / "scans" / f"bulk-{bulk_id_short}"
+    bulk_dir.mkdir(parents=True, exist_ok=True)
+
+    # Progress tracking
+    completed = [0]
+    failed_list: list[str] = []
+    writers = {"json": write_json_report, "md": write_markdown_report,
+               "html": write_html_report, "sarif": write_sarif_report}
+    ext_map = {"json": "json", "md": "md", "html": "html", "sarif": "sarif"}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Scanning...", total=len(unique_targets))
+
+        def on_done(target: str, result) -> None:
+            # Write individual report
+            target_dir = bulk_dir / target.replace("/", "_").replace(":", "_")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            report_path = target_dir / f"report.{ext_map[output_format]}"
+            writers[output_format](result, report_path)
+            completed[0] += 1
+            progress.advance(task)
+            progress.update(task, description=f"[green]✓[/green] {target}")
+
+        def on_fail(target: str, err: str) -> None:
+            failed_list.append(target)
+            progress.advance(task)
+            progress.update(task, description=f"[red]✗[/red] {target}")
+
+        scanner = BulkScanner(
+            config=config,
+            preset=preset,
+            concurrency=concurrency,
+            on_target_done=on_done,
+            on_target_fail=on_fail,
+        )
+        bulk_result = asyncio.get_event_loop().run_until_complete(scanner.run(unique_targets))
+
+    # Write combined summary report
+    write_bulk_report(bulk_result, bulk_dir)
+
+    console.print()
+    s = bulk_result.summary
+    risk_colors = {"NONE": "green", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red"}
+    risk_color = risk_colors.get(s.highest_risk, "white")
+    console.print(f"[bold]Bulk scan complete[/bold]")
+    console.print(f"  Targets: {s.total_targets} | Completed: {s.completed} | Failed: {s.failed}")
+    console.print(f"  Live hosts: {s.live_hosts} | Findings: {s.total_findings} | CVEs: {s.total_vulnerabilities}")
+    console.print(f"  [{risk_color}]Highest risk: {s.highest_risk}[/{risk_color}]")
+    console.print(f"  [dim]Summary: {bulk_dir}/summary.html[/dim]")
+
+
 @main.command()
 def init() -> None:
     """Initialize Argus Lite configuration."""
