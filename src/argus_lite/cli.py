@@ -57,7 +57,7 @@ def main() -> None:
 @main.command()
 @click.argument("target")
 @click.option("--preset", type=click.Choice(["quick", "full", "recon", "web"]), default="quick")
-@click.option("--output", "output_format", type=click.Choice(["json", "md", "html"]), default="md")
+@click.option("--output", "output_format", type=click.Choice(["json", "md", "html", "sarif"]), default="md")
 @click.option("--rate-limit", type=int, default=10, help="Requests per second")
 @click.option("--timeout", type=int, default=30, help="Timeout per request (seconds)")
 @click.option("--no-confirm", is_flag=True, default=False, help="Skip confirmation prompt")
@@ -194,8 +194,10 @@ def scan(
     report_dir = scan_dir / "report"
     report_dir.mkdir(exist_ok=True)
 
-    writers = {"json": write_json_report, "md": write_markdown_report, "html": write_html_report}
-    ext_map = {"json": "json", "md": "md", "html": "html"}
+    from argus_lite.modules.report.sarif_report import write_sarif_report
+
+    writers = {"json": write_json_report, "md": write_markdown_report, "html": write_html_report, "sarif": write_sarif_report}
+    ext_map = {"json": "json", "md": "md", "html": "html", "sarif": "sarif"}
 
     writer = writers[output_format]
     report_path = report_dir / f"report.{ext_map[output_format]}"
@@ -379,6 +381,23 @@ def plugins_check() -> None:
         avail = plugin.check_available()
         icon = "[green]OK[/green]" if avail else "[red]UNAVAILABLE[/red]"
         console.print(f"  {name}: {icon}")
+
+
+@main.command()
+@click.option("--port", default=8443, help="Dashboard port")
+@click.option("--host", default="127.0.0.1", help="Dashboard host")
+def dashboard(port: int, host: str) -> None:
+    """Launch local web dashboard to browse scan results."""
+    try:
+        from argus_lite.dashboard.app import create_app
+    except ImportError:
+        console.print("[red]Flask required. Install: pip install argus-lite[dashboard][/red]")
+        raise SystemExit(1)
+
+    home = _get_argus_home()
+    app = create_app(str(home))
+    console.print(f"[bold green]Argus Dashboard[/bold green] at http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)
 
 
 if __name__ == "__main__":

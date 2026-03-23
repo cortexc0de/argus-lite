@@ -23,6 +23,9 @@ argus = "argus_lite.cli:main"
 argus-lite = "argus_lite.cli:main"
 
 [project.optional-dependencies]
+dashboard = [
+    "flask>=3.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
