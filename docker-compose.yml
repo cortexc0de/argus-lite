@@ -1,0 +1,40 @@
+version: "3.9"
+
+# Argus Lite Docker Compose
+#
+# Scan:      docker compose run --rm scan
+# Dashboard: docker compose up dashboard
+# Custom:    TARGET=example.com docker compose run --rm scan
+
+services:
+  scan:
+    build: .
+    image: argus-lite:local
+    volumes:
+      - ./reports:/reports
+      - argus-home:/root/.argus-lite
+    environment:
+      - ARGUS_AI_KEY=${ARGUS_AI_KEY:-}
+      - ARGUS_NVD_KEY=${ARGUS_NVD_KEY:-}
+      - ARGUS_SHODAN_KEY=${ARGUS_SHODAN_KEY:-}
+      - ARGUS_VIRUSTOTAL_KEY=${ARGUS_VIRUSTOTAL_KEY:-}
+    command: >
+      scan ${TARGET:-example.com}
+      --preset ${PRESET:-quick}
+      --output ${OUTPUT:-html}
+      --no-confirm
+    # Override with: docker compose run --rm scan scan mysite.com --preset full
+
+  dashboard:
+    build: .
+    image: argus-lite:local
+    ports:
+      - "${DASHBOARD_PORT:-8443}:8443"
+    volumes:
+      - argus-home:/root/.argus-lite
+    command: dashboard --host 0.0.0.0 --port 8443
+    restart: unless-stopped
+
+volumes:
+  argus-home:
+    driver: local

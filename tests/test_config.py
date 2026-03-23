@@ -86,3 +86,16 @@ class TestConfigLoading:
         bad_file.write_text("invalid: yaml: [broken")
         with pytest.raises(ConfigLoadError):
             load_config(bad_file)
+
+    def test_env_var_override_nvd_key(self, sample_config_yaml, monkeypatch):
+        from argus_lite.core.config import load_config
+
+        monkeypatch.setenv("ARGUS_NVD_KEY", "nvd-key-789")
+        config = load_config(sample_config_yaml)
+        assert config.api_keys.nvd_api_key == "nvd-key-789"
+
+    def test_nvd_api_key_default_empty(self):
+        from argus_lite.core.config import AppConfig
+
+        config = AppConfig()
+        assert config.api_keys.nvd_api_key == ""

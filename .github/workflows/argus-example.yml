@@ -1,0 +1,62 @@
+name: Security Scan (Argus)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Run weekly on Mondays at 02:00 UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target to scan'
+        required: true
+        default: 'example.com'
+      preset:
+        description: 'Scan preset'
+        required: false
+        default: 'quick'
+        type: choice
+        options: [quick, full, recon, web]
+      fail-on:
+        description: 'Fail on risk level'
+        required: false
+        default: 'HIGH'
+        type: choice
+        options: [NONE, LOW, MEDIUM, HIGH]
+
+# Required for SARIF upload to GitHub Security tab
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  security-scan:
+    name: Argus Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Argus security scan
+        uses: cortexc0de/argus-lite@v1
+        with:
+          # Use a repository variable or secret for the target
+          target: ${{ vars.SCAN_TARGET || github.event.inputs.target || 'example.com' }}
+          preset: ${{ github.event.inputs.preset || 'quick' }}
+          fail-on: ${{ github.event.inputs.fail-on || 'HIGH' }}
+          output-format: sarif
+          # Optional: set NVD API key for CVE correlation (increases rate limit)
+          nvd-api-key: ${{ secrets.NVD_API_KEY }}
+
+      # Alternative: run multiple scans against different targets
+      # - name: Scan staging
+      #   uses: cortexc0de/argus-lite@v1
+      #   with:
+      #     target: ${{ vars.STAGING_URL }}
+      #     preset: web
+      #     fail-on: MEDIUM
+      #     output-format: sarif

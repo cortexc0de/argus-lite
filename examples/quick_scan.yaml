@@ -1,0 +1,18 @@
+# Argus Scan Template — example quick scan
+# Usage: argus run examples/quick_scan.yaml
+# Override target: argus run examples/quick_scan.yaml --target mysite.com
+# Use environment variable: TARGET=mysite.com argus run examples/quick_scan.yaml
+version: "1"
+target: "${TARGET}"
+preset: quick
+report:
+  format: html
+  output: ./reports/
+notify:
+  telegram: false
+  discord: false
+ai:
+  enabled: false
+rate_limit: 10
+timeout: 30
+no_confirm: true

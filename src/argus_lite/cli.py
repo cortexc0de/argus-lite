@@ -67,6 +67,7 @@ def main() -> None:
 @click.option("--resume", "resume_id", default=None, help="Resume interrupted scan by scan-id")
 @click.option("--templates", multiple=True, help="Custom nuclei template paths")
 @click.option("--ai", "use_ai", is_flag=True, default=False, help="Enable AI analysis of results")
+@click.option("--tui", is_flag=True, default=False, help="Interactive TUI mode (requires textual)")
 def scan(
     target: str,
     preset: str,
@@ -80,6 +81,7 @@ def scan(
     resume_id: str | None,
     templates: tuple[str, ...],
     use_ai: bool,
+    tui: bool,
 ) -> None:
     """Scan a target domain or IP address."""
     # Legal notice
@@ -127,37 +129,6 @@ def scan(
 
     config = _get_config()
 
-    from rich.live import Live
-    from rich.table import Table
-    from rich.text import Text
-
-    stage_status: dict[str, str] = {}
-
-    def render_progress() -> Table:
-        table = Table(show_header=False, box=None, padding=(0, 1))
-        for stage, st in stage_status.items():
-            if st == "start":
-                icon = "[cyan]...[/cyan]"
-            elif st == "done":
-                icon = "[green]OK[/green]"
-            elif st == "fail":
-                icon = "[red]FAIL[/red]"
-            elif st == "skip":
-                icon = "[yellow]SKIP[/yellow]"
-            else:
-                icon = "[dim]--[/dim]"
-            table.add_row(icon, stage)
-        return table
-
-    live = Live(render_progress(), console=console, refresh_per_second=4)
-
-    def on_progress(stage: str, status: str) -> None:
-        stage_status[stage] = status
-        try:
-            live.update(render_progress())
-        except Exception:
-            pass
-
     from argus_lite.core.resume import load_partial, save_partial
 
     # Resume logic
@@ -172,18 +143,69 @@ def scan(
             console.print(f"[red]No partial scan found for {resume_id}[/red]")
             raise SystemExit(1)
 
-    orch = ScanOrchestrator(
-        target=clean_target, config=config, on_progress=on_progress,
-        preset=preset,
-    )
+    # TUI mode
+    if tui:
+        try:
+            from argus_lite.tui.app import ArgusApp
+        except ImportError:
+            console.print("[red]textual required for TUI. Install: pip install argus-lite[/red]")
+            raise SystemExit(1)
 
-    console.print(f"[bold green]Starting scan: {clean_target} (preset: {preset})[/bold green]")
-    console.print()
+        app = ArgusApp(
+            target=clean_target,
+            config=config,
+            preset=preset,
+            rate_limit=rate_limit,
+            timeout=timeout,
+            safe=safe,
+        )
+        app.run()
+        result = app._result
+        if result is None:
+            raise SystemExit(0)
+    else:
+        from rich.live import Live
+        from rich.table import Table
 
-    with live:
-        result = asyncio.get_event_loop().run_until_complete(orch.run())
+        stage_status: dict[str, str] = {}
 
-    console.print()
+        def render_progress() -> Table:
+            table = Table(show_header=False, box=None, padding=(0, 1))
+            for stage, st in stage_status.items():
+                if st == "start":
+                    icon = "[cyan]...[/cyan]"
+                elif st == "done":
+                    icon = "[green]OK[/green]"
+                elif st == "fail":
+                    icon = "[red]FAIL[/red]"
+                elif st == "skip":
+                    icon = "[yellow]SKIP[/yellow]"
+                else:
+                    icon = "[dim]--[/dim]"
+                table.add_row(icon, stage)
+            return table
+
+        live = Live(render_progress(), console=console, refresh_per_second=4)
+
+        def on_progress(stage: str, status: str) -> None:
+            stage_status[stage] = status
+            try:
+                live.update(render_progress())
+            except Exception:
+                pass
+
+        orch = ScanOrchestrator(
+            target=clean_target, config=config, on_progress=on_progress,
+            preset=preset,
+        )
+
+        console.print(f"[bold green]Starting scan: {clean_target} (preset: {preset})[/bold green]")
+        console.print()
+
+        with live:
+            result = asyncio.get_event_loop().run_until_complete(orch.run())
+
+        console.print()
 
     # Save partial for resume capability
     home = _get_argus_home()
@@ -251,6 +273,38 @@ def scan(
         if dispatcher.get_active_notifiers():
             asyncio.get_event_loop().run_until_complete(dispatcher.notify_all(result))
             console.print("[dim]Notifications sent[/dim]")
+
+
+@main.command("run")
+@click.argument("template_path", type=click.Path(exists=True))
+@click.option("--target", default=None, help="Override target defined in template")
+@click.pass_context
+def run_template(ctx: click.Context, template_path: str, target: str | None) -> None:
+    """Run a scan from a YAML template file.
+
+    Example: argus run examples/quick_scan.yaml --target example.com
+    """
+    from argus_lite.core.scan_template import load_scan_template
+
+    tmpl = load_scan_template(template_path)
+    effective_target = target or tmpl.target
+
+    ctx.invoke(
+        scan,
+        target=effective_target,
+        preset=tmpl.preset,
+        output_format=tmpl.report.format,
+        rate_limit=tmpl.rate_limit,
+        timeout=tmpl.timeout,
+        no_confirm=tmpl.no_confirm,
+        safe=False,
+        notify=any([tmpl.notify.telegram, tmpl.notify.discord, tmpl.notify.slack]),
+        pipeline_path=None,
+        resume_id=None,
+        templates=(),
+        use_ai=tmpl.ai.enabled,
+        tui=False,
+    )
 
 
 @main.command()

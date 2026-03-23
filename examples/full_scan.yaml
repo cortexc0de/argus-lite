@@ -1,0 +1,16 @@
+# Argus Scan Template — full scan with AI
+# Usage: ARGUS_AI_KEY=sk-xxx argus run examples/full_scan.yaml --target target.com
+version: "1"
+target: "${TARGET}"
+preset: full
+report:
+  format: html
+  output: ./reports/
+notify:
+  telegram: false
+ai:
+  enabled: true
+  model: gpt-4o
+rate_limit: 5
+timeout: 60
+no_confirm: true

@@ -48,11 +48,13 @@ class ScanOrchestrator:
         config: AppConfig,
         on_progress: Callable[[str, str], None] | None = None,
         preset: str = "quick",
+        on_finding: Callable[[Finding], None] | None = None,
     ) -> None:
         self.target = target
         self.config = config
         self.shutdown_requested = False
         self._on_progress = on_progress or (lambda stage, status: None)
+        self._on_finding = on_finding
         self._scan_id = str(uuid.uuid4())
         self._preset = preset
         self._tools_used: list[str] = []
@@ -62,6 +64,7 @@ class ScanOrchestrator:
         self._recon_result = ReconResult()
         self._analysis_result = AnalysisResult()
         self._findings: list[Finding] = []
+        self._vulnerabilities: list = []
 
     def get_enabled_tools(self) -> set[str]:
         """Get all tool names enabled for the current preset."""
@@ -104,6 +107,9 @@ class ScanOrchestrator:
             self._skipped_stages.append("analysis")
             self._on_progress("analysis", "skip")
 
+        if not self.shutdown_requested:
+            await self._execute_stage("cve_enrichment", self._run_cve_enrichment)
+
         completed_at = datetime.now(tz=timezone.utc)
         status = "interrupted" if self.shutdown_requested else "completed"
 
@@ -117,6 +123,7 @@ class ScanOrchestrator:
             recon=self._recon_result,
             analysis=self._analysis_result,
             findings=self._findings,
+            vulnerabilities=self._vulnerabilities,
             tools_used=self._tools_used,
             completed_stages=self._completed_stages,
             skipped_stages=self._skipped_stages,
@@ -368,7 +375,11 @@ class ScanOrchestrator:
                         raw = f"HTTP/{resp.http_version} {resp.status_code}\n"
                         raw += "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
                         self._analysis_result.security_headers = analyze_security_headers(raw)
-                        self._findings.extend(security_headers_findings(raw, asset=self.target))
+                        new_findings = security_headers_findings(raw, asset=self.target)
+                        self._findings.extend(new_findings)
+                        if self._on_finding:
+                            for f in new_findings:
+                                self._on_finding(f)
                 except Exception:
                     pass
             group_a.append(do_headers())
@@ -421,6 +432,14 @@ class ScanOrchestrator:
 
         if group_b:
             await run_parallel(group_b)
+
+    async def _run_cve_enrichment(self) -> None:
+        """Query NVD API for CVEs matching detected technologies."""
+        from argus_lite.core.cve_enricher import CveEnricher
+
+        enricher = CveEnricher(api_key=self.config.api_keys.nvd_api_key)
+        vulns = await enricher.enrich(self._analysis_result.technologies)
+        self._vulnerabilities.extend(vulns)
 
     def _make_runner(self, name: str, default_path: str) -> BaseToolRunner:
         return BaseToolRunner(name=name, path=default_path)

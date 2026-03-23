@@ -395,6 +395,25 @@ _HTML_TEMPLATE = Template("""\
 </details>
 {% endif %}
 
+<!-- CVE Correlation -->
+{% if scan.vulnerabilities %}
+<div class="section">
+  <h2>CVE Correlation</h2>
+  <table>
+    <thead><tr><th>CVE ID</th><th>CVSS Score</th><th>Vector</th></tr></thead>
+    <tbody>
+    {% for v in scan.vulnerabilities %}
+    <tr>
+      <td><a href="https://nvd.nist.gov/vuln/detail/{{ v.cve }}" target="_blank" style="color:var(--accent);">{{ v.cve }}</a></td>
+      <td>{% if v.cvss_score is not none %}<span class="{{ 'header-missing' if v.cvss_score >= 7.0 else 'header-status' }}">{{ '%.1f' | format(v.cvss_score) }}</span>{% else %}-{% endif %}</td>
+      <td><code style="font-size:11px;">{{ v.cvss_vector or '-' }}</code></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <!-- Errors -->
 {% if scan.errors %}
 <div class="section">

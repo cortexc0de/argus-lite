@@ -78,6 +78,7 @@ class ToolsConfig(BaseModel):
 class ApiKeysConfig(BaseModel):
     shodan: str = ""
     virustotal: str = ""
+    nvd_api_key: str = ""
 
 
 class NotificationConfig(BaseModel):
@@ -151,6 +152,10 @@ def _apply_env_overrides(config: AppConfig) -> None:
     vt_key = os.environ.get("ARGUS_VIRUSTOTAL_KEY")
     if vt_key:
         config.api_keys.virustotal = vt_key
+
+    nvd_key = os.environ.get("ARGUS_NVD_KEY")
+    if nvd_key:
+        config.api_keys.nvd_api_key = nvd_key
 
     for env_name, attr in [
         ("ARGUS_TELEGRAM_TOKEN", "telegram_token"),

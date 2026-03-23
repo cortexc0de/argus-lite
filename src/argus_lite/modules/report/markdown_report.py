@@ -269,6 +269,18 @@ def generate_markdown_report(scan: ScanResult) -> str:
         lines.append("</details>")
         lines.append("")
 
+    # CVE Correlation
+    if scan.vulnerabilities:
+        lines.append("## CVE Correlation")
+        lines.append("")
+        lines.append("| CVE ID | CVSS Score | Vector |")
+        lines.append("|--------|------------|--------|")
+        for v in scan.vulnerabilities:
+            score = f"{v.cvss_score:.1f}" if v.cvss_score is not None else "-"
+            vector = v.cvss_vector or "-"
+            lines.append(f"| [{v.cve}](https://nvd.nist.gov/vuln/detail/{v.cve}) | {score} | `{vector}` |")
+        lines.append("")
+
     # Skipped/errored stages
     if scan.skipped_stages:
         lines.append("## Skipped Stages")

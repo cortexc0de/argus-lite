@@ -1,0 +1,117 @@
+name: 'Argus Security Scan'
+description: 'Run Argus Lite security scan with optional CI fail threshold'
+author: 'cortexc0de'
+
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  target:
+    description: 'Target to scan (domain, IP, or URL)'
+    required: true
+  preset:
+    description: 'Scan preset: quick, full, recon, or web'
+    required: false
+    default: 'quick'
+  fail-on:
+    description: 'Fail CI if risk level >= this value (NONE/LOW/MEDIUM/HIGH). NONE = never fail.'
+    required: false
+    default: 'NONE'
+  output-format:
+    description: 'Report format: json, md, html, or sarif'
+    required: false
+    default: 'sarif'
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+  nvd-api-key:
+    description: 'NVD API key for CVE correlation (optional, increases rate limit)'
+    required: false
+    default: ''
+  ai-key:
+    description: 'OpenAI-compatible API key for AI analysis (optional)'
+    required: false
+    default: ''
+
+outputs:
+  risk-level:
+    description: 'Detected risk level (NONE/LOW/MEDIUM/HIGH)'
+    value: ${{ steps.scan.outputs.risk-level }}
+  report-path:
+    description: 'Path to the generated report file'
+    value: ${{ steps.scan.outputs.report-path }}
+  scan-id:
+    description: 'Unique scan identifier'
+    value: ${{ steps.scan.outputs.scan-id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Argus Lite
+      run: pip install argus-lite
+      shell: bash
+
+    - name: Initialize Argus config
+      run: argus init || true
+      shell: bash
+
+    - name: Run Argus scan
+      id: scan
+      env:
+        ARGUS_NVD_KEY: ${{ inputs.nvd-api-key }}
+        ARGUS_AI_KEY: ${{ inputs.ai-key }}
+      run: |
+        argus scan "${{ inputs.target }}" \
+          --preset "${{ inputs.preset }}" \
+          --output "${{ inputs.output-format }}" \
+          --no-confirm \
+          --safe
+
+        # Extract scan ID from latest scan directory
+        SCAN_DIR=$(ls -td ~/.argus-lite/scans/*/ 2>/dev/null | head -1)
+        SCAN_ID=$(basename "$SCAN_DIR" 2>/dev/null || echo "unknown")
+
+        # Extract risk level from report (fallback to NONE)
+        RISK_LEVEL="NONE"
+        if [ -f "$SCAN_DIR/report/report.json" ]; then
+          RISK_LEVEL=$(python3 -c "
+        import json, sys
+        try:
+          d = json.load(open('$SCAN_DIR/report/report.json'))
+          rs = d.get('risk_summary') or {}
+          print(rs.get('risk_level', 'NONE'))
+        except Exception:
+          print('NONE')
+        ")
+        fi
+
+        echo "risk-level=$RISK_LEVEL" >> "$GITHUB_OUTPUT"
+        echo "scan-id=$SCAN_ID" >> "$GITHUB_OUTPUT"
+        echo "report-path=$SCAN_DIR/report/report.${{ inputs.output-format }}" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Upload SARIF to GitHub Security tab
+      if: inputs.output-format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.scan.outputs.report-path }}
+      continue-on-error: true
+
+    - name: Check risk threshold
+      run: |
+        python3 -c "
+        from argus_lite.core.exit_code import risk_to_exit_code
+        import sys
+        code = risk_to_exit_code('${{ steps.scan.outputs.risk-level }}', '${{ inputs.fail-on }}')
+        if code != 0:
+            print('Risk level ${{ steps.scan.outputs.risk-level }} >= fail-on threshold ${{ inputs.fail-on }}')
+        sys.exit(code)
+        "
+      shell: bash
