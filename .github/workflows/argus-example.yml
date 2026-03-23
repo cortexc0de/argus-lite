@@ -42,7 +42,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Argus security scan
-        uses: cortexc0de/argus-lite@v1
+        # When using from within this repo, use ./ (relative path to root action.yml)
+        # When using from OTHER repos, use: cortexc0de/argus-lite@v1
+        uses: ./
         with:
           # Use a repository variable or secret for the target
           target: ${{ vars.SCAN_TARGET || github.event.inputs.target || 'example.com' }}
@@ -51,12 +53,3 @@ jobs:
           output-format: sarif
           # Optional: set NVD API key for CVE correlation (increases rate limit)
           nvd-api-key: ${{ secrets.NVD_API_KEY }}
-
-      # Alternative: run multiple scans against different targets
-      # - name: Scan staging
-      #   uses: cortexc0de/argus-lite@v1
-      #   with:
-      #     target: ${{ vars.STAGING_URL }}
-      #     preset: web
-      #     fail-on: MEDIUM
-      #     output-format: sarif
