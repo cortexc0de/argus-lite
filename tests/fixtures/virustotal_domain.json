@@ -1,0 +1,23 @@
+{
+  "data": {
+    "id": "example.com",
+    "type": "domain",
+    "attributes": {
+      "last_analysis_stats": {"harmless": 70, "malicious": 0, "suspicious": 0, "undetected": 10, "timeout": 0},
+      "reputation": 0,
+      "registrar": "RESERVED-Internet Assigned Numbers Authority",
+      "creation_date": 807926400,
+      "last_dns_records": [
+        {"type": "A", "value": "93.184.216.34", "ttl": 300},
+        {"type": "AAAA", "value": "2606:2800:220:1:248:1893:25c8:1946", "ttl": 300},
+        {"type": "MX", "value": "0 .", "ttl": 300}
+      ],
+      "last_https_certificate": {
+        "subject": {"CN": "www.example.org"},
+        "issuer": {"O": "DigiCert Inc"},
+        "validity": {"not_after": "2027-02-13 23:59:59", "not_before": "2026-01-13 00:00:00"}
+      },
+      "total_votes": {"harmless": 5, "malicious": 0}
+    }
+  }
+}

@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
+from argus_lite.core.concurrent import run_parallel
 from argus_lite.core.config import AppConfig
 from argus_lite.core.tool_runner import BaseToolRunner, ToolNotFoundError
 from argus_lite.models.analysis import AnalysisResult
@@ -156,19 +157,22 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.tlsx_certs import tlsx_scan
         from argus_lite.modules.recon.whois import whois_lookup
 
+        # Group 1: Independent passive recon (run in parallel)
+        group1 = []
+
         if self._is_enabled("dns"):
             async def do_dns():
                 runner = self._make_runner("dig", "/usr/bin/dig")
                 self._recon_result.dns_records = await dns_enumerate(self.target, runner=runner)
                 self._tools_used.append("dig")
-            await self._run_subtask("dns", do_dns())
+            group1.append(do_dns())
 
         if self._is_enabled("whois"):
             async def do_whois():
                 runner = self._make_runner("whois", "/usr/bin/whois")
                 self._recon_result.whois_info = await whois_lookup(self.target, runner=runner)
                 self._tools_used.append("whois")
-            await self._run_subtask("whois", do_whois())
+            group1.append(do_whois())
 
         if self._is_enabled("subdomains"):
             async def do_subdomains():
@@ -178,14 +182,20 @@ class ScanOrchestrator:
                 runner = self._make_runner("subfinder", str(cfg.path))
                 self._recon_result.subdomains = await subdomain_enumerate(self.target, runner=runner)
                 self._tools_used.append("subfinder")
-            await self._run_subtask("subdomains", do_subdomains())
+            group1.append(do_subdomains())
 
         if self._is_enabled("certificates"):
             async def do_certs():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._recon_result.certificate_info = await certificate_info(self.target, runner=runner)
                 self._tools_used.append("openssl")
-            await self._run_subtask("certificates", do_certs())
+            group1.append(do_certs())
+
+        if group1:
+            await run_parallel(group1)
+
+        # Group 2: Discovery tools (depend on subdomains from group 1, run in parallel)
+        group2 = []
 
         if self._is_enabled("httpx"):
             async def do_httpx():
@@ -195,7 +205,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("httpx", str(cfg.path))
                 self._recon_result.http_probes = await httpx_probe(self.target, runner=runner)
                 self._tools_used.append("httpx")
-            await self._run_subtask("httpx", do_httpx())
+            group2.append(do_httpx())
 
         if self._is_enabled("katana"):
             async def do_katana():
@@ -205,7 +215,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("katana", str(cfg.path))
                 self._recon_result.crawl_results = await katana_crawl(self.target, runner=runner)
                 self._tools_used.append("katana")
-            await self._run_subtask("katana", do_katana())
+            group2.append(do_katana())
 
         if self._is_enabled("gau"):
             async def do_gau():
@@ -215,21 +225,19 @@ class ScanOrchestrator:
                 runner = self._make_runner("gau", str(cfg.path))
                 self._recon_result.historical_urls = await gau_discover(self.target, runner=runner)
                 self._tools_used.append("gau")
-            await self._run_subtask("gau", do_gau())
+            group2.append(do_gau())
 
         if self._is_enabled("dnsx"):
             async def do_dnsx():
                 cfg = self.config.tools.dnsx
                 if not cfg.enabled:
                     return
-                # Resolve subdomains found so far
                 targets = [s.name for s in self._recon_result.subdomains] or [self.target]
                 runner = self._make_runner("dnsx", str(cfg.path))
-                # dnsx uses stdin, so call runner.run with special handling
                 result = await runner.run(["-json", "-silent", "-a", "-aaaa", "-cname"])
                 self._recon_result.dns_resolutions = parse_dnsx_output(result.stdout)
                 self._tools_used.append("dnsx")
-            await self._run_subtask("dnsx", do_dnsx())
+            group2.append(do_dnsx())
 
         if self._is_enabled("tlsx"):
             async def do_tlsx():
@@ -240,7 +248,10 @@ class ScanOrchestrator:
                 runner = self._make_runner("tlsx", str(cfg.path))
                 self._recon_result.tls_certs = await tlsx_scan(targets, runner=runner)
                 self._tools_used.append("tlsx")
-            await self._run_subtask("tlsx", do_tlsx())
+            group2.append(do_tlsx())
+
+        if group2:
+            await run_parallel(group2)
 
     async def _run_analysis(self) -> None:
         from argus_lite.modules.analysis.ffuf_fuzz import ffuf_scan
@@ -253,6 +264,9 @@ class ScanOrchestrator:
         from argus_lite.modules.analysis.ssl import ssl_check
         from argus_lite.modules.analysis.techstack import tech_scan
 
+        # All analysis tasks are independent — run in parallel
+        tasks = []
+
         if self._is_enabled("ports"):
             async def do_ports():
                 cfg = self.config.tools.naabu
@@ -261,7 +275,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("naabu", str(cfg.path))
                 self._analysis_result.open_ports = await port_scan(self.target, runner=runner)
                 self._tools_used.append("naabu")
-            await self._run_subtask("ports", do_ports())
+            tasks.append(do_ports())
 
         if self._is_enabled("techstack"):
             async def do_tech():
@@ -271,13 +285,13 @@ class ScanOrchestrator:
                 runner = self._make_runner("whatweb", str(cfg.path))
                 self._analysis_result.technologies = await tech_scan(self.target, runner=runner)
                 self._tools_used.append("whatweb")
-            await self._run_subtask("techstack", do_tech())
+            tasks.append(do_tech())
 
         if self._is_enabled("ssl"):
             async def do_ssl():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._analysis_result.ssl_info = await ssl_check(self.target, runner=runner)
-            await self._run_subtask("ssl", do_ssl())
+            tasks.append(do_ssl())
 
         if self._is_enabled("headers"):
             async def do_headers():
@@ -291,7 +305,7 @@ class ScanOrchestrator:
                         self._findings.extend(security_headers_findings(raw, asset=self.target))
                 except Exception:
                     pass
-            await self._run_subtask("headers", do_headers())
+            tasks.append(do_headers())
 
         if self._is_enabled("nuclei"):
             async def do_nuclei():
@@ -301,7 +315,7 @@ class ScanOrchestrator:
                 runner = self._make_runner("nuclei", str(cfg.path))
                 self._analysis_result.nuclei_findings = await nuclei_scan(self.target, runner=runner)
                 self._tools_used.append("nuclei")
-            await self._run_subtask("nuclei", do_nuclei())
+            tasks.append(do_nuclei())
 
         if self._is_enabled("ffuf"):
             async def do_ffuf():
@@ -313,7 +327,10 @@ class ScanOrchestrator:
                     f"https://{self.target}", runner=runner,
                 )
                 self._tools_used.append("ffuf")
-            await self._run_subtask("ffuf", do_ffuf())
+            tasks.append(do_ffuf())
+
+        if tasks:
+            await run_parallel(tasks)
 
     def _make_runner(self, name: str, default_path: str) -> BaseToolRunner:
         return BaseToolRunner(name=name, path=default_path)

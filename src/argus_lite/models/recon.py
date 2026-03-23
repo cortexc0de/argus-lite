@@ -78,6 +78,34 @@ class TlsCert(BaseModel):
     self_signed: bool = False
 
 
+class ShodanHostInfo(BaseModel):
+    ip: str = ""
+    hostnames: list[str] = []
+    org: str = ""
+    ports: list[int] = []
+    country: str = ""
+    city: str = ""
+    isp: str = ""
+    vulns: list[str] = []
+    services: list[dict] = []
+
+class VirusTotalInfo(BaseModel):
+    domain: str = ""
+    reputation: int = 0
+    malicious_count: int = 0
+    harmless_count: int = 0
+    dns_records: list[dict] = []
+    certificate_subject: str = ""
+    certificate_issuer: str = ""
+
+class SecurityTrailsInfo(BaseModel):
+    hostname: str = ""
+    a_records: list[str] = []
+    mx_records: list[str] = []
+    ns_records: list[str] = []
+    subdomain_count: int = 0
+
+
 class ReconResult(BaseModel):
     """Aggregated result from recon module."""
 
@@ -90,3 +118,6 @@ class ReconResult(BaseModel):
     historical_urls: list[HistoricalUrl] = []
     dns_resolutions: list[DnsResolution] = []
     tls_certs: list[TlsCert] = []
+    shodan_info: ShodanHostInfo | None = None
+    virustotal_info: VirusTotalInfo | None = None
+    securitytrails_info: SecurityTrailsInfo | None = None

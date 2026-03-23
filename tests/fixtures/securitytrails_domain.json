@@ -1,0 +1,12 @@
+{
+  "hostname": "example.com",
+  "current_dns": {
+    "a": {"values": [{"ip": "93.184.216.34"}]},
+    "aaaa": {"values": [{"ipv6": "2606:2800:220:1:248:1893:25c8:1946"}]},
+    "mx": {"values": [{"host": "mail.example.com", "priority": 10}]},
+    "ns": {"values": [{"nameserver": "a.iana-servers.net"}, {"nameserver": "b.iana-servers.net"}]},
+    "txt": {"values": [{"value": "v=spf1 -all"}]}
+  },
+  "subdomain_count": 25,
+  "alexa_rank": 12345
+}

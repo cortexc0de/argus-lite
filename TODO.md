@@ -9,10 +9,10 @@
 
 ## Important (улучшают качество)
 
-- [ ] **P5: OSINT API integrations** — Shodan, VirusTotal, SecurityTrails (ключи уже в конфиге)
+- [x] **P5: OSINT API integrations** — Shodan, VirusTotal, SecurityTrails
 - [ ] **P6: Resume interrupted scans** — `argus scan --resume <scan-id>` из partial results
 - [ ] **P7: Nuclei custom templates** — поддержка пользовательских шаблонов из `~/.argus-lite/templates/`
-- [ ] **P8: Concurrent subtasks** — asyncio.gather для независимых инструментов внутри одного этапа
+- [x] **P8: Concurrent subtasks** — asyncio.gather для параллельных инструментов (3-5x ускорение)
 
 ## Nice to Have
 

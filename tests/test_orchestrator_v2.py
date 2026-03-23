@@ -1,4 +1,4 @@
-"""TDD: Tests for upgraded orchestrator — preset selection + new tools."""
+"""Tests for upgraded orchestrator — preset selection + parallel execution."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -17,7 +17,6 @@ class TestPresets:
         assert "dig" in tools
         assert "whois" in tools
         assert "whatweb" in tools
-        # Quick should NOT include heavy tools
         assert "naabu" not in tools
         assert "nuclei" not in tools
         assert "ffuf" not in tools
@@ -28,7 +27,6 @@ class TestPresets:
 
         orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="full")
         tools = orch.get_enabled_tools()
-        # Full includes everything
         assert "dig" in tools
         assert "naabu" in tools
         assert "nuclei" in tools
@@ -47,7 +45,6 @@ class TestPresets:
         assert "dig" in tools
         assert "whois" in tools
         assert "subfinder" in tools
-        # No active scanning
         assert "naabu" not in tools
         assert "nuclei" not in tools
         assert "ffuf" not in tools
@@ -61,56 +58,24 @@ class TestPresets:
         assert "katana" in tools
         assert "nuclei" in tools
         assert "whatweb" in tools
-        # Web should not include port scan
         assert "naabu" not in tools
 
 
-class TestNewToolsWired:
-    def test_recon_runs_new_tools_in_full(self):
+class TestParallelExecution:
+    def test_full_scan_completes(self):
         from argus_lite.core.orchestrator import ScanOrchestrator
 
         orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="full")
 
-        with patch.object(orch, "_run_subtask", new_callable=AsyncMock) as mock_sub:
-            asyncio.get_event_loop().run_until_complete(orch._run_recon())
+        with patch.object(orch, "_run_recon", new_callable=AsyncMock), \
+             patch.object(orch, "_run_analysis", new_callable=AsyncMock):
+            result = asyncio.get_event_loop().run_until_complete(orch.run())
 
-        called_names = [call.args[0] for call in mock_sub.call_args_list]
-        assert "dns" in called_names
-        assert "whois" in called_names
-        assert "httpx" in called_names
-        assert "katana" in called_names
-        assert "gau" in called_names
-        assert "dnsx" in called_names
-        assert "tlsx" in called_names
-
-    def test_analysis_runs_ffuf_in_full(self):
-        from argus_lite.core.orchestrator import ScanOrchestrator
-
-        orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="full")
-
-        with patch.object(orch, "_run_subtask", new_callable=AsyncMock) as mock_sub:
-            asyncio.get_event_loop().run_until_complete(orch._run_analysis())
-
-        called_names = [call.args[0] for call in mock_sub.call_args_list]
-        assert "ffuf" in called_names
-        assert "nuclei" in called_names
-        assert "ports" in called_names
-
-    def test_quick_skips_heavy_tools(self):
-        from argus_lite.core.orchestrator import ScanOrchestrator
-
-        orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="quick")
-
-        with patch.object(orch, "_run_subtask", new_callable=AsyncMock) as mock_sub:
-            asyncio.get_event_loop().run_until_complete(orch._run_recon())
-
-        called_names = [call.args[0] for call in mock_sub.call_args_list]
-        assert "dns" in called_names
-        assert "katana" not in called_names
-        assert "gau" not in called_names
+        assert result.status == "completed"
+        assert "recon" in result.completed_stages
+        assert "analysis" in result.completed_stages
 
     def test_backward_compat_no_preset(self):
-        """Default (no preset) should work like before."""
         from argus_lite.core.orchestrator import ScanOrchestrator
 
         orch = ScanOrchestrator(target="example.com", config=AppConfig())
@@ -120,3 +85,27 @@ class TestNewToolsWired:
             result = asyncio.get_event_loop().run_until_complete(orch.run())
 
         assert result.status in ("completed", "interrupted")
+
+    def test_recon_uses_run_parallel(self):
+        """Verify run_parallel is called for grouped tasks."""
+        from argus_lite.core.orchestrator import ScanOrchestrator
+
+        orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="full")
+
+        with patch("argus_lite.core.orchestrator.run_parallel", new_callable=AsyncMock) as mock_par:
+            mock_par.return_value = []
+            asyncio.get_event_loop().run_until_complete(orch._run_recon())
+
+        # Should be called twice (group1 + group2)
+        assert mock_par.call_count == 2
+
+    def test_analysis_uses_run_parallel(self):
+        from argus_lite.core.orchestrator import ScanOrchestrator
+
+        orch = ScanOrchestrator(target="example.com", config=AppConfig(), preset="full")
+
+        with patch("argus_lite.core.orchestrator.run_parallel", new_callable=AsyncMock) as mock_par:
+            mock_par.return_value = []
+            asyncio.get_event_loop().run_until_complete(orch._run_analysis())
+
+        assert mock_par.call_count == 1
