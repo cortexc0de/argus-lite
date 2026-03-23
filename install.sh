@@ -179,20 +179,26 @@ install_binary() {
     local tmpdir
     tmpdir=$(mktemp -d)
 
-    if run_with_spinner "Downloading $name $version" curl -fsSL -o "$tmpdir/archive.zip" "$url"; then
-        # Extract
+    if run_with_spinner "Downloading $name $version" curl -fsSL -o "$tmpdir/download" "$url"; then
         cd "$tmpdir"
+
+        # Detect format and extract or use directly
         if [[ "$url" == *.zip ]]; then
+            mv download archive.zip
             unzip -q archive.zip 2>/dev/null || true
         elif [[ "$url" == *.tar.gz || "$url" == *.tgz ]]; then
-            tar xzf archive.zip 2>/dev/null || true
+            mv download archive.tar.gz
+            tar xzf archive.tar.gz 2>/dev/null || true
+        else
+            # Raw binary (e.g. gowitness) — rename directly
+            mv download "$name"
         fi
 
         # Find and install binary
         local bin_file
-        bin_file=$(find "$tmpdir" -name "$name" -type f -executable 2>/dev/null | head -1)
+        bin_file=$(find "$tmpdir" -name "$name" -type f 2>/dev/null | head -1)
         if [[ -z "$bin_file" ]]; then
-            bin_file=$(find "$tmpdir" -name "$name" -type f 2>/dev/null | head -1)
+            bin_file=$(find "$tmpdir" -name "$name*" -type f 2>/dev/null | head -1)
         fi
 
         if [[ -n "$bin_file" ]]; then
