@@ -366,7 +366,7 @@ main() {
     echo "  / _ \ | '__/ _\` | | | / __| | |   | | __/ _ \\"
     echo " / ___ \| | | (_| | |_| \__ \ | |___| | ||  __/"
     echo "/_/   \_\_|  \__, |\__,_|___/ |_____|_|\__\___|"
-    echo "             |___/          Installer v1.1     "
+    echo "             |___/          Installer v1.2     "
     echo -e "${NC}"
 
     check_os
@@ -393,7 +393,12 @@ main() {
     echo -e "${GREEN}${BOLD}=== Installation complete ===${NC}"
     echo ""
     echo "  Quick scan:     argus scan <target> --preset quick"
-    echo "  Full scan:      argus scan <target> --preset full --output html"
+    echo "  Full scan:      argus scan <target> --preset full --output html --ai"
+    echo "  Interactive:    argus scan <target> --tui"
+    echo "  Bulk scan:      argus bulk targets.txt --preset web"
+    echo "  Bulk CIDR:      argus bulk 192.168.1.0/24"
+    echo "  From template:  argus run examples/quick_scan.yaml --target <host>"
+    echo "  Dashboard:      argus dashboard"
     echo "  Check tools:    argus tools check"
     echo ""
 }
