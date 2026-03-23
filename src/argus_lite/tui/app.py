@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual import work
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable, Footer, Header, Log
+from textual.widgets import DataTable, Footer, Header, RichLog
 
 from argus_lite.core.config import AppConfig
 from argus_lite.models.finding import Finding
@@ -27,6 +27,7 @@ Screen {
 #stages {
     height: 100%;
     border: round #00ff41;
+    padding: 0 1;
 }
 #findings {
     height: 100%;
@@ -38,7 +39,7 @@ Screen {
 class ArgusApp(App):
     """Interactive TUI for Argus security scans."""
 
-    BINDINGS = [("q", "quit", "Quit")]
+    BINDINGS = [("q", "quit", "Quit"), ("ctrl+c", "quit", "Quit")]
     CSS = CSS
 
     def __init__(
@@ -62,7 +63,7 @@ class ArgusApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Log(id="stages", highlight=True, markup=True)
+        yield RichLog(id="stages", highlight=True)
         yield DataTable(id="findings")
         yield Footer()
 
@@ -71,6 +72,10 @@ class ArgusApp(App):
         self.sub_title = f"preset: {self._preset}"
         table = self.query_one("#findings", DataTable)
         table.add_columns("Severity", "Title", "Asset", "Source")
+        log = self.query_one("#stages", RichLog)
+        log.write(f"[cyan]Target:[/cyan] [bold]{self._target}[/bold]")
+        log.write(f"[cyan]Preset:[/cyan] {self._preset}")
+        log.write("")
         self.run_scan()
 
     @work
@@ -102,8 +107,8 @@ class ArgusApp(App):
             "skip": "yellow",
         }
         color = color_map.get(msg.status, "white")
-        log = self.query_one("#stages", Log)
-        log.write_line(f"[{color}]{icon}[/{color}] {msg.stage}")
+        log = self.query_one("#stages", RichLog)
+        log.write(f"[{color}]{icon}[/{color}] {msg.stage}")
 
     def on_finding_update(self, msg: FindingUpdate) -> None:
         table = self.query_one("#findings", DataTable)
@@ -112,6 +117,11 @@ class ArgusApp(App):
 
     def on_scan_complete(self, msg: ScanComplete) -> None:
         self._result = msg.result
-        log = self.query_one("#stages", Log)
-        log.write_line(f"[bold green]✓ Scan complete[/bold green]")
-        # Don't auto-exit — let user review and press Q
+        log = self.query_one("#stages", RichLog)
+        r = msg.result
+        risk = r.risk_summary.risk_level if r.risk_summary else "NONE"
+        color = {"NONE": "green", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red"}.get(risk, "white")
+        log.write("")
+        log.write(f"[bold green]✓ Scan complete[/bold green]")
+        log.write(f"[{color}]Risk: {risk}[/{color}] | Findings: {len(r.findings)}")
+        log.write("[dim]Press Q to exit[/dim]")

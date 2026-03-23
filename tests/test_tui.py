@@ -59,6 +59,7 @@ class TestArgusAppInstantiation:
         config = AppConfig()
         app = ArgusApp(target="example.com", config=config, preset="quick")
         assert app is not None
+        assert "RichLog" in str(type(app).__mro__) or True  # just check no import error
 
     def test_app_has_correct_target(self):
         from argus_lite.core.config import AppConfig

@@ -76,10 +76,12 @@ class TestExpandCidr:
         assert len(result) >= 2
         assert all("192.168.1." in ip for ip in result)
 
-    def test_caps_at_max_targets(self, expander):
-        # /16 = 65536 IPs, should be capped at max_targets=50
+    def test_hard_cap_on_large_cidr(self, expander):
+        # /16 = 65536 IPs, should be capped at hard safety limit (65536)
+        # but NOT at max_targets — that cap is applied in expand()
         result = expander._expand_cidr("10.0.0.0/16")
-        assert len(result) <= 50
+        assert len(result) <= 65536
+        assert len(result) > 50  # definitely more than the old max_targets=50
 
     def test_single_host_cidr(self, expander):
         result = expander._expand_cidr("192.168.1.1/32")
@@ -134,9 +136,11 @@ class TestExpandIntegration:
         )
         assert result.count("example.com") == 1
 
-    def test_expand_caps_total(self, expander):
-        # Generate 100 hosts via CIDR, should be capped at max_targets
+    def test_expand_caps_total_at_max_targets(self, expander):
+        # expand() applies max_targets cap; default is 500
         result = asyncio.get_event_loop().run_until_complete(
             expander.expand(["10.0.0.0/16"])
         )
         assert len(result) <= expander._max_targets
+        # For a /16 (65536 IPs) capped at 500
+        assert len(result) == expander._max_targets

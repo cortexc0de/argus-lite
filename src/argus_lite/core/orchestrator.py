@@ -53,12 +53,15 @@ class ScanOrchestrator:
         on_progress: Callable[[str, str], None] | None = None,
         preset: str = "quick",
         on_finding: Callable[[Finding], None] | None = None,
+        skip_cve: bool = False,
     ) -> None:
         self.target = target
         self.config = config
         self.shutdown_requested = False
         self._on_progress = on_progress or (lambda stage, status: None)
         self._on_finding = on_finding
+        # Skip CVE if explicitly requested, or for bulk/recon presets (speed)
+        self._skip_cve = skip_cve or preset in ("bulk", "recon")
         self._scan_id = str(uuid.uuid4())
         self._preset = preset
         self._tools_used: list[str] = []
@@ -111,8 +114,10 @@ class ScanOrchestrator:
             self._skipped_stages.append("analysis")
             self._on_progress("analysis", "skip")
 
-        if not self.shutdown_requested:
+        if not self.shutdown_requested and not self._skip_cve:
             await self._execute_stage("cve_enrichment", self._run_cve_enrichment)
+        elif self._skip_cve:
+            self._skipped_stages.append("cve_enrichment")
 
         completed_at = datetime.now(tz=timezone.utc)
         status = "interrupted" if self.shutdown_requested else "completed"

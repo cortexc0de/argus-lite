@@ -107,7 +107,11 @@ class TargetExpander:
         return targets
 
     def _expand_cidr(self, cidr: str) -> list[str]:
-        """Expand CIDR notation to a list of individual IPs (capped at max_targets)."""
+        """Expand CIDR notation to a list of individual IPs.
+
+        Does NOT apply max_targets cap — that happens in expand() globally.
+        Caps at 65536 to prevent accidental /8 expansions.
+        """
         try:
             network = ipaddress.ip_network(cidr, strict=False)
         except ValueError as e:
@@ -118,8 +122,9 @@ class TargetExpander:
             # /32 or single host — include the network address itself
             hosts = [network.network_address]
 
-        cap = min(len(hosts), self._max_targets)
-        return [str(ip) for ip in hosts[:cap]]
+        # Hard safety cap (e.g. /8 would be 16M IPs)
+        _HARD_CAP = 65536
+        return [str(ip) for ip in hosts[:_HARD_CAP]]
 
     async def _expand_asn(self, asn: str) -> list[str]:
         """Expand ASN to IPs via BGPView API (free, no API key needed)."""

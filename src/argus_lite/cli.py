@@ -68,6 +68,7 @@ def main() -> None:
 @click.option("--templates", multiple=True, help="Custom nuclei template paths")
 @click.option("--ai", "use_ai", is_flag=True, default=False, help="Enable AI analysis of results")
 @click.option("--tui", is_flag=True, default=False, help="Interactive TUI mode (requires textual)")
+@click.option("--no-cve", is_flag=True, default=False, help="Skip CVE enrichment (faster scans)")
 def scan(
     target: str,
     preset: str,
@@ -82,6 +83,7 @@ def scan(
     templates: tuple[str, ...],
     use_ai: bool,
     tui: bool,
+    no_cve: bool,
 ) -> None:
     """Scan a target domain or IP address."""
     # Legal notice
@@ -196,7 +198,7 @@ def scan(
 
         orch = ScanOrchestrator(
             target=clean_target, config=config, on_progress=on_progress,
-            preset=preset,
+            preset=preset, skip_cve=no_cve,
         )
 
         console.print(f"[bold green]Starting scan: {clean_target} (preset: {preset})[/bold green]")
@@ -313,7 +315,7 @@ def run_template(ctx: click.Context, template_path: str, target: str | None) -> 
 @click.option("--preset", type=click.Choice(["bulk", "quick", "web", "full", "recon"]), default="bulk",
               help="Scan preset for each target")
 @click.option("--concurrency", type=int, default=5, help="Max parallel scans")
-@click.option("--max-targets", type=int, default=50, help="Maximum targets to scan")
+@click.option("--max-targets", type=int, default=500, help="Maximum targets to scan")
 @click.option("--output", "output_format", type=click.Choice(["json", "md", "html", "sarif"]), default="html")
 @click.option("--no-confirm", is_flag=True, default=False, help="Skip confirmation prompt")
 def bulk_scan(
@@ -565,6 +567,65 @@ def config_show() -> None:
     """Show current configuration."""
     cfg = _get_config()
     console.print(cfg.model_dump_json(indent=2))
+
+
+@config.command("ai")
+@click.option("--base-url", default=None, help="API base URL (e.g. https://api.openai.com/v1)")
+@click.option("--api-key", default=None, help="API key")
+@click.option("--model", default=None, help="Model name (e.g. gpt-4o, llama3)")
+def config_ai(base_url: str | None, api_key: str | None, model: str | None) -> None:
+    """Configure AI provider (OpenAI-compatible: OpenAI, Ollama, vLLM, etc.).
+
+    \b
+    Examples:
+      argus config ai --base-url https://api.openai.com/v1 --api-key sk-xxx --model gpt-4o
+      argus config ai --base-url http://localhost:11434/v1 --model llama3
+    """
+    import yaml
+
+    home = _get_argus_home()
+    config_file = home / "config.yaml"
+
+    # Load existing or default
+    if config_file.exists():
+        raw = yaml.safe_load(config_file.read_text()) or {}
+    else:
+        raw = {}
+
+    if "ai" not in raw:
+        raw["ai"] = {}
+
+    # Prompt for missing values
+    if base_url is None:
+        current = raw["ai"].get("base_url", "https://api.openai.com/v1")
+        base_url = click.prompt("Base URL", default=current)
+
+    if api_key is None:
+        current = raw["ai"].get("api_key", "")
+        api_key = click.prompt("API Key", default=current, hide_input=True, show_default=False,
+                               prompt_suffix=" (hidden): ")
+
+    if model is None:
+        current = raw["ai"].get("model", "gpt-4o")
+        model = click.prompt("Model", default=current)
+
+    raw["ai"]["base_url"] = base_url
+    raw["ai"]["api_key"] = api_key
+    raw["ai"]["model"] = model
+    raw["ai"]["enabled"] = True
+
+    # Write back
+    home.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(yaml.dump(raw, default_flow_style=False))
+    import os
+    os.chmod(config_file, 0o600)
+
+    console.print(f"[green]AI config saved:[/green] {config_file}")
+    console.print(f"  Base URL: {base_url}")
+    console.print(f"  Model:    {model}")
+    console.print(f"  Key:      {'***' + api_key[-4:] if api_key else '(empty)'}")
+    console.print()
+    console.print("[dim]Usage: argus scan <target> --ai[/dim]")
 
 
 @main.group()

@@ -105,7 +105,7 @@ class AIConfig(BaseModel):
 
 class BulkConfig(BaseModel):
     max_concurrent: int = 5
-    max_targets: int = 50
+    max_targets: int = 500
 
 
 class AppConfig(BaseModel):
