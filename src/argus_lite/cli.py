@@ -21,7 +21,11 @@ Always obtain written permission before scanning any system you do not own.
 Unauthorized scanning may violate computer crime laws in your jurisdiction.
 """
 
-VERSION = "1.0.0"
+try:
+    from importlib.metadata import version as _pkg_version
+    VERSION = _pkg_version("argus-lite")
+except Exception:
+    VERSION = "1.2.0"
 
 
 def _get_argus_home() -> Path:
