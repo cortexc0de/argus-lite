@@ -118,6 +118,64 @@ def generate_markdown_report(scan: ScanResult) -> str:
             lines.append(f"| {t.name} | {ver} | {cat} |")
         lines.append("")
 
+    # HTTP Probes
+    if scan.recon.http_probes:
+        lines.append("## HTTP Probes")
+        lines.append("")
+        lines.append("| URL | Status | Title | Tech | Response |")
+        lines.append("|-----|--------|-------|------|----------|")
+        for p in scan.recon.http_probes:
+            tech = ", ".join(p.tech) if p.tech else "-"
+            lines.append(f"| `{p.url}` | {p.status_code} | {p.title} | {tech} | {p.response_time_ms}ms |")
+        lines.append("")
+
+    # Fuzz Results
+    if scan.analysis.fuzz_results:
+        lines.append("## Directory Fuzzing")
+        lines.append("")
+        lines.append("| URL | Status | Size | Redirect |")
+        lines.append("|-----|--------|------|----------|")
+        for f in scan.analysis.fuzz_results:
+            redir = f.redirect_location or "-"
+            lines.append(f"| `{f.url}` | {f.status_code} | {f.content_length} | {redir} |")
+        lines.append("")
+
+    # Historical URLs
+    if scan.recon.historical_urls:
+        lines.append("<details>")
+        lines.append(f"<summary><strong>Historical URLs</strong> ({len(scan.recon.historical_urls)} URLs)</summary>")
+        lines.append("")
+        for h in scan.recon.historical_urls:
+            lines.append(f"- `{h.url}` _{h.source}_")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    # Crawl Results
+    if scan.recon.crawl_results:
+        lines.append("<details>")
+        lines.append(f"<summary><strong>Crawled Endpoints</strong> ({len(scan.recon.crawl_results)} URLs)</summary>")
+        lines.append("")
+        for c in scan.recon.crawl_results:
+            lines.append(f"- `{c.url}`")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    # TLS Certificates
+    if scan.recon.tls_certs:
+        lines.append("<details>")
+        lines.append(f"<summary><strong>TLS Certificates</strong> ({len(scan.recon.tls_certs)} certs)</summary>")
+        lines.append("")
+        lines.append("| Host | Subject | Issuer | Expires |")
+        lines.append("|------|---------|--------|---------|")
+        for t in scan.recon.tls_certs:
+            exp = f"{t.not_after} **EXPIRED**" if t.expired else t.not_after
+            lines.append(f"| {t.host} | {t.subject_cn} | {t.issuer} | {exp} |")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
     # Open Ports (only with services)
     relevant_ports = filter_relevant_ports(scan)
     if relevant_ports:

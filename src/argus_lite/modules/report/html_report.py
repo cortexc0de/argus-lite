@@ -196,6 +196,96 @@ _HTML_TEMPLATE = Template("""\
 </div>
 {% endif %}
 
+<!-- HTTP Probes -->
+{% if scan.recon.http_probes %}
+<div class="section">
+  <h2>HTTP Probes</h2>
+  <table>
+    <tr><th>URL</th><th>Status</th><th>Title</th><th>Tech</th><th>Server</th><th>Response</th></tr>
+    {% for p in scan.recon.http_probes %}
+    <tr>
+      <td><code>{{ p.url }}</code></td>
+      <td>{{ p.status_code }}</td>
+      <td>{{ p.title }}</td>
+      <td>{{ p.tech | join(', ') }}</td>
+      <td>{{ p.server }}</td>
+      <td>{{ p.response_time_ms }}ms</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<!-- Crawl Results -->
+{% if scan.recon.crawl_results %}
+<details>
+  <summary>Crawled Endpoints ({{ scan.recon.crawl_results | length }})</summary>
+  <div class="content">
+    <table>
+      <tr><th>URL</th><th>Method</th></tr>
+      {% for c in scan.recon.crawl_results %}
+      <tr><td><code>{{ c.url }}</code></td><td>{{ c.method }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+{% endif %}
+
+<!-- Historical URLs -->
+{% if scan.recon.historical_urls %}
+<details>
+  <summary>Historical URLs ({{ scan.recon.historical_urls | length }})</summary>
+  <div class="content">
+    <table>
+      <tr><th>URL</th><th>Source</th></tr>
+      {% for h in scan.recon.historical_urls %}
+      <tr><td><code>{{ h.url }}</code></td><td>{{ h.source }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+{% endif %}
+
+<!-- Fuzz Results -->
+{% if scan.analysis.fuzz_results %}
+<div class="section">
+  <h2>Directory Fuzzing</h2>
+  <table>
+    <tr><th>URL</th><th>Status</th><th>Size</th><th>Words</th><th>Redirect</th></tr>
+    {% for f in scan.analysis.fuzz_results %}
+    <tr>
+      <td><code>{{ f.url }}</code></td>
+      <td>{{ f.status_code }}</td>
+      <td>{{ f.content_length }}</td>
+      <td>{{ f.words }}</td>
+      <td>{{ f.redirect_location }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<!-- TLS Certificates -->
+{% if scan.recon.tls_certs %}
+<details>
+  <summary>TLS Certificates ({{ scan.recon.tls_certs | length }})</summary>
+  <div class="content">
+    <table>
+      <tr><th>Host</th><th>Subject</th><th>Issuer</th><th>SAN</th><th>Expires</th></tr>
+      {% for t in scan.recon.tls_certs %}
+      <tr>
+        <td>{{ t.host }}</td>
+        <td>{{ t.subject_cn }}</td>
+        <td>{{ t.issuer }}</td>
+        <td>{{ t.san | join(', ') }}</td>
+        <td>{{ t.not_after }}{{ ' (EXPIRED)' if t.expired else '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+{% endif %}
+
 <!-- Subdomains -->
 {% if scan.recon.subdomains %}
 <details>

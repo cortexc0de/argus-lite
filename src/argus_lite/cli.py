@@ -120,24 +120,50 @@ def scan(
     from argus_lite.utils.progress import ScanProgress
 
     config = _get_config()
-    progress = ScanProgress(stages=["recon", "analysis"])
+
+    from rich.live import Live
+    from rich.table import Table
+    from rich.text import Text
+
+    stage_status: dict[str, str] = {}
+
+    def render_progress() -> Table:
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        for stage, st in stage_status.items():
+            if st == "start":
+                icon = "[cyan]...[/cyan]"
+            elif st == "done":
+                icon = "[green]OK[/green]"
+            elif st == "fail":
+                icon = "[red]FAIL[/red]"
+            elif st == "skip":
+                icon = "[yellow]SKIP[/yellow]"
+            else:
+                icon = "[dim]--[/dim]"
+            table.add_row(icon, stage)
+        return table
+
+    live = Live(render_progress(), console=console, refresh_per_second=4)
 
     def on_progress(stage: str, status: str) -> None:
-        if status == "start":
-            console.print(f"[cyan]  Running {stage}...[/cyan]")
-        elif status == "done":
-            console.print(f"[green]  {stage} completed[/green]")
-        elif status == "fail":
-            console.print(f"[red]  {stage} failed[/red]")
-        elif status == "skip":
-            console.print(f"[yellow]  {stage} skipped[/yellow]")
+        stage_status[stage] = status
+        try:
+            live.update(render_progress())
+        except Exception:
+            pass
 
     orch = ScanOrchestrator(
         target=clean_target, config=config, on_progress=on_progress,
+        preset=preset,
     )
 
     console.print(f"[bold green]Starting scan: {clean_target} (preset: {preset})[/bold green]")
-    result = asyncio.get_event_loop().run_until_complete(orch.run())
+    console.print()
+
+    with live:
+        result = asyncio.get_event_loop().run_until_complete(orch.run())
+
+    console.print()
 
     # Generate report
     home = _get_argus_home()
