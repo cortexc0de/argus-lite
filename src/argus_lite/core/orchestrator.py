@@ -153,9 +153,41 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.gau_urls import gau_discover
         from argus_lite.modules.recon.httpx_probe import httpx_probe
         from argus_lite.modules.recon.katana_crawl import katana_crawl
+        from argus_lite.modules.recon.securitytrails_api import st_lookup
+        from argus_lite.modules.recon.shodan_api import shodan_lookup
         from argus_lite.modules.recon.subdomains import subdomain_enumerate
         from argus_lite.modules.recon.tlsx_certs import tlsx_scan
+        from argus_lite.modules.recon.virustotal_api import vt_lookup
         from argus_lite.modules.recon.whois import whois_lookup
+
+        # Group 0: OSINT APIs (no tools needed, run in parallel, fire-and-forget)
+        api_tasks = []
+        api_keys = self.config.api_keys
+
+        if api_keys.shodan:
+            async def do_shodan():
+                self._recon_result.shodan_info = await shodan_lookup(self.target, api_keys.shodan)
+                self._tools_used.append("shodan-api")
+            api_tasks.append(do_shodan())
+
+        if api_keys.virustotal:
+            async def do_vt():
+                self._recon_result.virustotal_info = await vt_lookup(self.target, api_keys.virustotal)
+                self._tools_used.append("virustotal-api")
+            api_tasks.append(do_vt())
+
+        async def do_st():
+            # SecurityTrails uses env var ARGUS_SECURITYTRAILS_KEY
+            import os
+            st_key = os.environ.get("ARGUS_SECURITYTRAILS_KEY", "")
+            if st_key:
+                self._recon_result.securitytrails_info = await st_lookup(self.target, st_key)
+                self._tools_used.append("securitytrails-api")
+
+        api_tasks.append(do_st())
+
+        if api_tasks:
+            await run_parallel(api_tasks)
 
         # Group 1: Independent passive recon (run in parallel)
         group1 = []

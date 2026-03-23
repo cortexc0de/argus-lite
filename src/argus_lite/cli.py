@@ -64,6 +64,8 @@ def main() -> None:
 @click.option("--safe", is_flag=True, default=False, help="Passive checks only")
 @click.option("--notify", is_flag=True, default=False, help="Send notifications after scan")
 @click.option("--pipeline", "pipeline_path", type=click.Path(exists=True), default=None, help="Custom pipeline YAML")
+@click.option("--resume", "resume_id", default=None, help="Resume interrupted scan by scan-id")
+@click.option("--templates", multiple=True, help="Custom nuclei template paths")
 def scan(
     target: str,
     preset: str,
@@ -74,6 +76,8 @@ def scan(
     safe: bool,
     notify: bool,
     pipeline_path: str | None,
+    resume_id: str | None,
+    templates: tuple[str, ...],
 ) -> None:
     """Scan a target domain or IP address."""
     # Legal notice
@@ -152,6 +156,20 @@ def scan(
         except Exception:
             pass
 
+    from argus_lite.core.resume import load_partial, save_partial
+
+    # Resume logic
+    if resume_id:
+        home_r = _get_argus_home()
+        resume_dir = Path(home_r) / "scans" / resume_id
+        partial = load_partial(resume_dir)
+        if partial:
+            console.print(f"[cyan]Resuming scan {resume_id} (completed: {', '.join(partial.completed_stages)})[/cyan]")
+            clean_target = partial.target
+        else:
+            console.print(f"[red]No partial scan found for {resume_id}[/red]")
+            raise SystemExit(1)
+
     orch = ScanOrchestrator(
         target=clean_target, config=config, on_progress=on_progress,
         preset=preset,
@@ -165,8 +183,12 @@ def scan(
 
     console.print()
 
-    # Generate report
+    # Save partial for resume capability
     home = _get_argus_home()
+    scan_dir = Path(home) / "scans" / result.scan_id
+    save_partial(result, scan_dir)
+
+    # Generate report
     scan_dir = Path(home) / "scans" / result.scan_id
     scan_dir.mkdir(parents=True, exist_ok=True)
     report_dir = scan_dir / "report"

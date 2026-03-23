@@ -52,6 +52,23 @@ def parse_nuclei_output(raw: str) -> list[NucleiFinding]:
     return findings
 
 
+def build_nuclei_args(
+    target: str,
+    templates: list[str] | None = None,
+) -> list[str]:
+    """Build nuclei CLI arguments. Severity is ALWAYS info,low."""
+    args = [
+        "-u", target,
+        "-severity", "info,low",
+        "-jsonl",
+        "-silent",
+    ]
+    if templates:
+        for t in templates:
+            args.extend(["-t", t])
+    return args
+
+
 async def nuclei_scan(
     target: str,
     runner: BaseToolRunner | None = None,
@@ -61,16 +78,7 @@ async def nuclei_scan(
     if runner is None:
         runner = BaseToolRunner(name="nuclei", path="/usr/bin/nuclei")
 
-    args = [
-        "-u", target,
-        "-severity", "info,low",  # Request only info/low from nuclei
-        "-jsonl",
-        "-silent",
-    ]
-    if templates:
-        for t in templates:
-            args.extend(["-t", t])
-
+    args = build_nuclei_args(target, templates)
     result: ToolOutput = await runner.run(args)
 
     # Double enforcement: parse also filters

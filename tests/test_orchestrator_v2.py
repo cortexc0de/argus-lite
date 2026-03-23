@@ -96,8 +96,8 @@ class TestParallelExecution:
             mock_par.return_value = []
             asyncio.get_event_loop().run_until_complete(orch._run_recon())
 
-        # Should be called twice (group1 + group2)
-        assert mock_par.call_count == 2
+        # Should be called 3 times (api_tasks + group1 + group2)
+        assert mock_par.call_count == 3
 
     def test_analysis_uses_run_parallel(self):
         from argus_lite.core.orchestrator import ScanOrchestrator
