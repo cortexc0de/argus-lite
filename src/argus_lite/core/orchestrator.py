@@ -119,6 +119,10 @@ class ScanOrchestrator:
         elif self._skip_cve:
             self._skipped_stages.append("cve_enrichment")
 
+        # Run plugins (if any loaded)
+        if not self.shutdown_requested and self.config.plugins.enabled:
+            await self._run_plugins()
+
         completed_at = datetime.now(tz=timezone.utc)
         status = "interrupted" if self.shutdown_requested else "completed"
 
@@ -485,6 +489,40 @@ class ScanOrchestrator:
         enricher = CveEnricher(api_key=self.config.api_keys.nvd_api_key)
         vulns = await enricher.enrich(self._analysis_result.technologies)
         self._vulnerabilities.extend(vulns)
+
+    async def _run_plugins(self) -> None:
+        """Execute any loaded plugins."""
+        from argus_lite.core.plugin_loader import PluginLoader
+
+        try:
+            dirs = [Path(d).expanduser() for d in self.config.plugins.plugin_dirs]
+            loader = PluginLoader(dirs)
+            plugins = loader.load_all()
+
+            if not plugins:
+                return
+
+            self._on_progress("plugins", "start")
+
+            context = {
+                "target": self.target,
+                "recon": self._recon_result,
+                "analysis": self._analysis_result,
+                "findings": self._findings,
+                "tools_used": self._tools_used,
+            }
+
+            for name, plugin in plugins.items():
+                try:
+                    if plugin.check_available():
+                        await plugin.run(context, self.config)
+                        self._tools_used.append(f"plugin:{name}")
+                except Exception as exc:
+                    logger.warning("Plugin '%s' failed: %s", name, exc)
+
+            self._on_progress("plugins", "done")
+        except Exception as exc:
+            logger.debug("Plugin loading failed: %s", exc)
 
     def _make_runner(self, name: str, default_path: str) -> BaseToolRunner:
         return BaseToolRunner(name=name, path=default_path)
