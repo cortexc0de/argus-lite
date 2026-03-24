@@ -24,8 +24,8 @@ class MonitorTab(Static):
             yield Input(placeholder="example.com", id="monitor-target")
             yield Label("Interval")
             yield Select(
-                [("3600", "1 hour"), ("21600", "6 hours"),
-                 ("43200", "12 hours"), ("86400", "24 hours")],
+                [("1 hour", "3600"), ("6 hours", "21600"),
+                 ("12 hours", "43200"), ("24 hours", "86400")],
                 value="86400", id="monitor-interval", allow_blank=False,
             )
             yield Label("Notify on new findings")

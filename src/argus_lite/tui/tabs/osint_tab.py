@@ -15,11 +15,11 @@ from argus_lite.models.discover import DiscoverQuery
 from argus_lite.tui.messages import OsintQueryComplete
 
 _SOURCES = [
-    ("discover", "All APIs"),
-    ("shodan", "Shodan"),
-    ("censys", "Censys"),
-    ("zoomeye", "ZoomEye"),
-    ("fofa", "FOFA"),
+    ("All APIs", "discover"),
+    ("Shodan", "shodan"),
+    ("Censys", "censys"),
+    ("ZoomEye", "zoomeye"),
+    ("FOFA", "fofa"),
 ]
 
 

@@ -14,11 +14,11 @@ from argus_lite.models.finding import Finding
 from argus_lite.tui.messages import FindingUpdate, ScanComplete, StageUpdate
 
 _PRESETS = [
-    ("quick", "Quick (DNS + headers + SSL)"),
-    ("full", "Full (all tools)"),
-    ("web", "Web (httpx + nuclei + katana)"),
-    ("recon", "Recon only (passive)"),
-    ("bulk", "Bulk (fast per-host)"),
+    ("Quick (DNS + headers + SSL)", "quick"),
+    ("Full (all tools)", "full"),
+    ("Web (httpx + nuclei + katana)", "web"),
+    ("Recon only (passive)", "recon"),
+    ("Bulk (fast per-host)", "bulk"),
 ]
 
 _STAGE_ICONS = {"start": "⟳", "done": "✓", "fail": "✗", "skip": "—"}
