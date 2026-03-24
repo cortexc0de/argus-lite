@@ -126,6 +126,9 @@ class ScanOrchestrator:
         completed_at = datetime.now(tz=timezone.utc)
         status = "interrupted" if self.shutdown_requested else "completed"
 
+        # Deduplicate findings and ports before building result
+        self._deduplicate_results()
+
         return ScanResult(
             scan_id=self._scan_id,
             target=self.target,
@@ -592,6 +595,38 @@ class ScanOrchestrator:
             self._on_progress("plugins", "done")
         except Exception as exc:
             logger.debug("Plugin loading failed: %s", exc)
+
+    def _deduplicate_results(self) -> None:
+        """Remove duplicate findings and ports."""
+        # Deduplicate findings by (title + asset) key
+        seen: set[str] = set()
+        unique_findings: list[Finding] = []
+        for f in self._findings:
+            key = f"{f.title.lower()}|{f.asset.lower()}"
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+        self._findings = unique_findings
+
+        # Deduplicate ports by (port, protocol)
+        seen_ports: set[tuple[int, str]] = set()
+        unique_ports = []
+        for p in self._analysis_result.open_ports:
+            key = (p.port, p.protocol)
+            if key not in seen_ports:
+                seen_ports.add(key)
+                unique_ports.append(p)
+        self._analysis_result.open_ports = unique_ports
+
+        # Deduplicate nuclei findings by template_id + matched_at
+        seen_nuclei: set[str] = set()
+        unique_nuclei = []
+        for nf in self._analysis_result.nuclei_findings:
+            key = f"{nf.template_id}|{nf.matched_at}"
+            if key not in seen_nuclei:
+                seen_nuclei.add(key)
+                unique_nuclei.append(nf)
+        self._analysis_result.nuclei_findings = unique_nuclei
 
     def _make_runner(self, name: str, default_path: str) -> BaseToolRunner:
         return BaseToolRunner(name=name, path=default_path)
