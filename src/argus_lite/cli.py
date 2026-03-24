@@ -52,10 +52,20 @@ def _build_registry(config: AppConfig) -> ToolRegistry:
     return registry
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=VERSION, prog_name="argus-lite")
-def main() -> None:
+@click.pass_context
+def main(ctx: click.Context) -> None:
     """Argus Lite — local security scanner for authorized penetration testing."""
+    if ctx.invoked_subcommand is None:
+        # No subcommand → launch full TUI
+        try:
+            from argus_lite.tui.app import ArgusApp
+            app = ArgusApp()
+            app.run()
+        except ImportError:
+            console.print("Run 'argus --help' for available commands.")
+            console.print("Install textual for TUI: pip install textual")
 
 
 @main.command()

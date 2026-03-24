@@ -31,3 +31,18 @@ class ScanComplete(Message):
     def __init__(self, result: ScanResult) -> None:
         super().__init__()
         self.result = result
+
+
+class ConfigSaved(Message):
+    """Fired when settings are saved to config.yaml."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+
+class OsintQueryComplete(Message):
+    """Fired when OSINT discovery query returns results."""
+
+    def __init__(self, hosts: list) -> None:
+        super().__init__()
+        self.hosts = hosts

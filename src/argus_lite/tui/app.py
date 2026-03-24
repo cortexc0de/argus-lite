@@ -1,127 +1,102 @@
-"""Argus interactive TUI — real-time scan dashboard."""
+"""Argus interactive TUI — full tabbed application."""
 
 from __future__ import annotations
 
-from textual import work
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable, Footer, Header, RichLog
+from textual.widgets import Footer, Header, TabbedContent, TabPane
 
-from argus_lite.core.config import AppConfig
+from argus_lite.core.config import AppConfig, load_config
 from argus_lite.models.finding import Finding
 from argus_lite.models.scan import ScanResult
 from argus_lite.tui.messages import FindingUpdate, ScanComplete, StageUpdate
-
-_STAGE_ICONS = {
-    "start": "⟳",
-    "done": "✓",
-    "fail": "✗",
-    "skip": "—",
-}
+from argus_lite.tui.tabs.monitor_tab import MonitorTab
+from argus_lite.tui.tabs.osint_tab import OsintTab
+from argus_lite.tui.tabs.results_tab import ResultsTab
+from argus_lite.tui.tabs.scan_tab import ScanTab
+from argus_lite.tui.tabs.settings_tab import SettingsTab
 
 CSS = """
-Screen {
-    layout: grid;
-    grid-size: 2;
-    grid-gutter: 1 2;
-}
-#stages {
-    height: 100%;
-    border: round #00ff41;
-    padding: 0 1;
-}
-#findings {
-    height: 100%;
-    border: round #ff6b6b;
-}
+Screen { background: $surface; }
+TabbedContent { height: 1fr; }
+TabPane { padding: 1; }
 """
 
 
 class ArgusApp(App):
-    """Interactive TUI for Argus security scans."""
+    """Argus Lite — full interactive TUI with tabs."""
 
-    BINDINGS = [("q", "quit", "Quit"), ("ctrl+c", "quit", "Quit")]
+    TITLE = "Argus"
+    SUB_TITLE = "Security Scanner"
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("ctrl+c", "quit", "Quit"),
+        ("f1", "tab_scan", "Scan"),
+        ("f2", "tab_settings", "Settings"),
+        ("f3", "tab_results", "Results"),
+        ("f4", "tab_osint", "OSINT"),
+        ("f5", "tab_monitor", "Monitor"),
+    ]
     CSS = CSS
 
     def __init__(
         self,
-        target: str,
-        config: AppConfig,
+        target: str | None = None,
+        config: AppConfig | None = None,
         preset: str = "quick",
-        rate_limit: int = 10,
-        timeout: int = 30,
-        safe: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._target = target
         self._config = config
         self._preset = preset
-        self._rate_limit = rate_limit
-        self._timeout = timeout
-        self._safe = safe
         self._result: ScanResult | None = None
 
     def compose(self) -> ComposeResult:
+        from pathlib import Path
+
+        config = self._config or load_config(
+            Path.home() / ".argus-lite" / "config.yaml"
+        )
+
         yield Header()
-        yield RichLog(id="stages", highlight=True)
-        yield DataTable(id="findings")
+        with TabbedContent(initial="tab-scan"):
+            with TabPane("Scan", id="tab-scan"):
+                yield ScanTab(config=config)
+            with TabPane("Settings", id="tab-settings"):
+                yield SettingsTab(config=config)
+            with TabPane("Results", id="tab-results"):
+                yield ResultsTab()
+            with TabPane("OSINT", id="tab-osint"):
+                yield OsintTab(config=config)
+            with TabPane("Monitor", id="tab-monitor"):
+                yield MonitorTab()
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = f"Argus — {self._target}"
-        self.sub_title = f"preset: {self._preset}"
-        table = self.query_one("#findings", DataTable)
-        table.add_columns("Severity", "Title", "Asset", "Source")
-        log = self.query_one("#stages", RichLog)
-        log.write(f"[cyan]Target:[/cyan] [bold]{self._target}[/bold]")
-        log.write(f"[cyan]Preset:[/cyan] {self._preset}")
-        log.write("")
-        self.run_scan()
+        if self._target:
+            # Pre-fill target if provided (e.g., from argus scan --tui)
+            try:
+                inp = self.query_one("#scan-target")
+                inp.value = self._target
+            except Exception:
+                pass
 
-    @work
-    async def run_scan(self) -> None:
-        from argus_lite.core.orchestrator import ScanOrchestrator
+    # F-key tab switching
+    def action_tab_scan(self) -> None:
+        self.query_one(TabbedContent).active = "tab-scan"
 
-        orch = ScanOrchestrator(
-            target=self._target,
-            config=self._config,
-            preset=self._preset,
-            on_progress=self._on_progress,
-            on_finding=self._on_finding,
-        )
-        result = await orch.run()
-        self.post_message(ScanComplete(result=result))
+    def action_tab_settings(self) -> None:
+        self.query_one(TabbedContent).active = "tab-settings"
 
-    def _on_progress(self, stage: str, status: str) -> None:
-        self.post_message(StageUpdate(stage=stage, status=status))
+    def action_tab_results(self) -> None:
+        self.query_one(TabbedContent).active = "tab-results"
 
-    def _on_finding(self, finding: Finding) -> None:
-        self.post_message(FindingUpdate(finding=finding))
+    def action_tab_osint(self) -> None:
+        self.query_one(TabbedContent).active = "tab-osint"
 
-    def on_stage_update(self, msg: StageUpdate) -> None:
-        icon = _STAGE_ICONS.get(msg.status, "?")
-        color_map = {
-            "start": "cyan",
-            "done": "green",
-            "fail": "red",
-            "skip": "yellow",
-        }
-        color = color_map.get(msg.status, "white")
-        log = self.query_one("#stages", RichLog)
-        log.write(f"[{color}]{icon}[/{color}] {msg.stage}")
+    def action_tab_monitor(self) -> None:
+        self.query_one(TabbedContent).active = "tab-monitor"
 
-    def on_finding_update(self, msg: FindingUpdate) -> None:
-        table = self.query_one("#findings", DataTable)
-        f = msg.finding
-        table.add_row(f.severity, f.title, f.asset, f.source)
-
+    # Bubble up scan events for the scan tab
     def on_scan_complete(self, msg: ScanComplete) -> None:
         self._result = msg.result
-        log = self.query_one("#stages", RichLog)
-        r = msg.result
-        risk = r.risk_summary.risk_level if r.risk_summary else "NONE"
-        color = {"NONE": "green", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red"}.get(risk, "white")
-        log.write("")
-        log.write(f"[bold green]✓ Scan complete[/bold green]")
-        log.write(f"[{color}]Risk: {risk}[/{color}] | Findings: {len(r.findings)}")
-        log.write("[dim]Press Q to exit[/dim]")
