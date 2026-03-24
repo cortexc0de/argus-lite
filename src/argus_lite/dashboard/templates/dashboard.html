@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Argus — Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Dashboard</h2>
+  <div class="page-actions">
+    <a href="/scan" class="btn btn-primary">+ New Scan</a>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card blue">
+    <div class="stat-value">{{ stats.total }}</div>
+    <div class="stat-label">Total Scans</div>
+  </div>
+  <div class="stat-card cyan">
+    <div class="stat-value">{{ stats.findings }}</div>
+    <div class="stat-label">Total Findings</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-value">{{ stats.risk_none }}</div>
+    <div class="stat-label">Risk: None</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ stats.risk_med }}</div>
+    <div class="stat-label">Risk: Medium</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-value">{{ stats.risk_high }}</div>
+    <div class="stat-label">Risk: High</div>
+  </div>
+  <div class="stat-card purple">
+    <div class="stat-value">{{ stats.cves }}</div>
+    <div class="stat-label">CVEs Found</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Risk Distribution</div>
+    <div class="chart-container">
+      <canvas id="riskChart"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Recent Activity</div>
+    {% for s in scans[:5] %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <strong>{{ s.target }}</strong>
+        <span style="color:var(--dim);font-size:12px;margin-left:8px;">{{ s.date }}</span>
+      </div>
+      <span class="badge badge-{{ s.risk|lower }}">{{ s.risk }}</span>
+    </div>
+    {% endfor %}
+    {% if not scans %}<p style="color:var(--dim);padding:20px 0;text-align:center;">No scans yet. <a href="/scan" style="color:var(--accent);">Start one</a></p>{% endif %}
+  </div>
+</div>
+
+<div class="panel" style="margin-top:8px;">
+  <div class="panel-title">All Scans</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>ID</th><th>Target</th><th>Status</th><th>Date</th><th>Findings</th><th>Risk</th><th>Tools</th></tr>
+    </thead>
+    <tbody>
+    {% for s in scans %}
+    <tr onclick="window.location='/report/{{ s.scan_id }}'">
+      <td><code>{{ s.scan_id[:8] }}</code></td>
+      <td><strong>{{ s.target }}</strong></td>
+      <td><span class="badge badge-{{ s.status }}">{{ s.status }}</span></td>
+      <td style="color:var(--dim);">{{ s.date }}</td>
+      <td>{{ s.findings_count }}</td>
+      <td><span class="badge badge-{{ s.risk|lower }}">{{ s.risk }}</span> <span style="color:var(--dim);font-size:12px;">({{ s.score }})</span></td>
+      <td style="color:var(--dim);font-size:12px;">{{ s.tools }}</td>
+    </tr>
+    {% endfor %}
+    {% if not scans %}
+    <tr><td colspan="7" style="text-align:center;color:var(--dim);padding:40px;">No scans found</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const ctx = document.getElementById('riskChart');
+if (ctx) {
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['None', 'Low', 'Medium', 'High'],
+      datasets: [{
+        data: [{{ stats.risk_none }}, {{ stats.risk_low }}, {{ stats.risk_med }}, {{ stats.risk_high }}],
+        backgroundColor: ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444'],
+        borderColor: '#1a2332',
+        borderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#718096', padding: 16, font: { size: 12 } } }
+      },
+      cutout: '65%',
+    }
+  });
+}
+</script>
+{% endblock %}

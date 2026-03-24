@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Argus — New Scan{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">New Scan</h2>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Scan Configuration</div>
+    <form hx-post="/api/scan/start" hx-target="#scan-output" hx-indicator="#scan-spinner">
+      <div class="input-group">
+        <label>Target</label>
+        <input type="text" name="target" class="input-field" placeholder="example.com, 192.168.1.1, or URL" required>
+      </div>
+      <div class="input-group">
+        <label>Preset</label>
+        <select name="preset" class="input-field">
+          <option value="quick">Quick — DNS, headers, SSL</option>
+          <option value="full">Full — all 15 tools</option>
+          <option value="web">Web — httpx, nuclei, katana</option>
+          <option value="recon">Recon — passive only</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Output Format</label>
+        <select name="output" class="input-field">
+          <option value="html">HTML Report</option>
+          <option value="json">JSON</option>
+          <option value="md">Markdown</option>
+          <option value="sarif">SARIF (CI/CD)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <input type="checkbox" name="ai" id="ai-check" style="accent-color:var(--accent);">
+        <label for="ai-check" style="font-size:14px;color:var(--text);text-transform:none;letter-spacing:0;">Enable AI Analysis</label>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
+        <span class="htmx-indicator"><span class="spinner"></span></span>
+        Start Scan
+      </button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Scan Output</div>
+    <div id="scan-output" style="min-height:200px;">
+      <p style="color:var(--dim);text-align:center;padding:40px 0;">Configure and start a scan to see results here.</p>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Quick Commands</div>
+  <pre>
+# CLI equivalents:
+argus scan example.com --preset quick
+argus scan example.com --preset full --output html --ai
+argus bulk targets.txt --preset web
+argus discover --tech "WordPress 6.3"
+argus monitor example.com --interval 24h</pre>
+</div>
+{% endblock %}

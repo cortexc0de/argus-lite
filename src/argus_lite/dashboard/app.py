@@ -1,61 +1,72 @@
-"""Argus web dashboard v2 — scan history, risk trends, API, compare."""
+"""Argus web dashboard v3 — full web interface with htmx."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 
 
 def create_app(argus_home: str) -> Flask:
     """Create Flask app for the dashboard."""
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(Path(__file__).parent / "templates"),
+        static_folder=str(Path(__file__).parent / "static"),
+    )
     home = Path(argus_home)
     scans_dir = home / "scans"
 
-    # ── HTML Routes ──
+    # ── HTML Pages ──
 
     @app.route("/")
     def index():
         scans = _list_scans(scans_dir)
-        total = len(scans)
-        risks = {"NONE": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0}
-        total_findings = 0
-        for s in scans:
-            rs = s.get("risk_summary") or {}
-            rl = rs.get("risk_level", "NONE")
-            risks[rl] = risks.get(rl, 0) + 1
-            total_findings += len(s.get("findings", []))
+        scan_rows = _format_scans(scans)
+        stats = _compute_stats(scans)
+        return render_template("dashboard.html", page="dashboard",
+                               scans=scan_rows, stats=stats)
 
-        rows = ""
-        for s in scans:
-            sid = s.get("scan_id", "")
-            target = s.get("target", "?")
-            status = s.get("status", "?")
-            date = (s.get("started_at", "") or "")[:16].replace("T", " ")
-            fc = len(s.get("findings", []))
-            rs = s.get("risk_summary") or {}
-            rl = rs.get("risk_level", "NONE")
-            score = rs.get("overall_score", 0)
-            rc = {"NONE": "#3fb950", "LOW": "#58a6ff", "MEDIUM": "#d29922", "HIGH": "#f85149"}.get(rl, "#8b949e")
-            tools = ", ".join(s.get("tools_used", [])[:5])
-            rows += f"""<tr onclick="window.location='/report/{sid}'" style="cursor:pointer">
-              <td><code>{sid[:8]}</code></td><td><strong>{target}</strong></td>
-              <td>{status}</td><td>{date}</td><td>{fc}</td>
-              <td><span style="color:{rc};font-weight:600">{rl}</span> <span style="color:#8b949e;font-size:12px">({score})</span></td>
-              <td style="color:#8b949e;font-size:12px">{tools}</td>
-            </tr>"""
+    @app.route("/scan")
+    def scan_page():
+        return render_template("scan.html", page="scan")
 
-        return _DASHBOARD_HTML.format(
-            total=total,
-            findings=total_findings,
-            risk_none=risks["NONE"],
-            risk_low=risks["LOW"],
-            risk_med=risks["MEDIUM"],
-            risk_high=risks["HIGH"],
-            rows=rows or '<tr><td colspan="7" style="text-align:center;color:#8b949e;padding:40px">No scans found. Run: argus scan &lt;target&gt;</td></tr>',
-        )
+    @app.route("/results")
+    def results_page():
+        scans = _list_scans(scans_dir)
+        scan_rows = _format_scans(scans)
+        return render_template("dashboard.html", page="results",
+                               scans=scan_rows, stats=_compute_stats(scans))
+
+    @app.route("/osint")
+    def osint_page():
+        return render_template("osint.html", page="osint")
+
+    @app.route("/settings", methods=["GET", "POST"])
+    def settings_page():
+        config_path = home / "config.yaml"
+        saved = False
+
+        if request.method == "POST":
+            _save_settings(config_path, request.form)
+            saved = True
+
+        config_data = _load_settings(config_path)
+        keys = [
+            ("shodan", "Shodan"),
+            ("virustotal", "VirusTotal"),
+            ("censys_id", "Censys API ID"),
+            ("censys_secret", "Censys Secret"),
+            ("zoomeye", "ZoomEye"),
+            ("fofa_email", "FOFA Email"),
+            ("fofa_key", "FOFA Key"),
+            ("greynoise", "GreyNoise"),
+            ("nvd", "NVD (CVE Lookup)"),
+        ]
+        return render_template("settings.html", page="settings",
+                               config=config_data, keys=keys, saved=saved)
 
     @app.route("/report/<scan_id>")
     def view_report(scan_id: str):
@@ -63,6 +74,104 @@ def create_app(argus_home: str) -> Flask:
         if not report.exists():
             abort(404)
         return report.read_text()
+
+    # ── HTMX API endpoints ──
+
+    @app.route("/api/scan/start", methods=["POST"])
+    def api_scan_start():
+        target = request.form.get("target", "").strip()
+        preset = request.form.get("preset", "quick")
+        if not target:
+            return '<div class="alert alert-error">Please enter a target.</div>'
+
+        # Run scan in background thread
+        import threading
+
+        def run_scan():
+            from argus_lite.core.config import load_config as _load
+            from argus_lite.core.orchestrator import ScanOrchestrator
+            from argus_lite.core.resume import save_partial
+            from argus_lite.core.risk_scorer import score_scan
+            from argus_lite.modules.report.html_report import write_html_report
+
+            config = _load(home / "config.yaml")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            orch = ScanOrchestrator(target=target, config=config, preset=preset)
+            result = loop.run_until_complete(orch.run())
+            result.risk_summary = score_scan(result)
+
+            scan_dir = scans_dir / result.scan_id
+            save_partial(result, scan_dir)
+            report_dir = scan_dir / "report"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            write_html_report(result, report_dir / "report.html")
+
+        t = threading.Thread(target=run_scan, daemon=True)
+        t.start()
+
+        return f'''
+        <div class="alert alert-success fade-in">
+            Scan started for <strong>{target}</strong> (preset: {preset})
+        </div>
+        <p style="color:var(--dim);margin-top:8px;">
+            Scan is running in background. Refresh <a href="/" style="color:var(--accent);">Dashboard</a> to see results.
+        </p>
+        '''
+
+    @app.route("/api/discover", methods=["POST"])
+    def api_discover():
+        from argus_lite.core.config import load_config as _load
+        from argus_lite.core.discovery_engine import DiscoveryEngine
+        from argus_lite.models.discover import DiscoverQuery
+
+        cve = request.form.get("cve", "").strip()
+        tech = request.form.get("tech", "").strip()
+        service = request.form.get("service", "").strip()
+        port_str = request.form.get("port", "").strip()
+        country = request.form.get("country", "").strip()
+
+        if not any([cve, tech, service, port_str]):
+            return '<div class="alert alert-warning">Enter at least one search field.</div>'
+
+        port = int(port_str) if port_str.isdigit() else None
+        query = DiscoverQuery(cve=cve, tech=tech, service=service, port=port, country=country)
+
+        config = _load(home / "config.yaml")
+        engine = DiscoveryEngine(config)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(engine.discover(query))
+
+        if not result.hosts:
+            sources = ", ".join(result.sources_queried) if result.sources_queried else "none (no API keys configured)"
+            return f'<div class="alert alert-warning fade-in">No hosts found. Queried: {sources}</div>'
+
+        rows = ""
+        for h in result.hosts[:100]:
+            rows += f"""<tr>
+                <td><code>{h.ip}</code></td>
+                <td>{h.port or '—'}</td>
+                <td>{h.service or '—'}</td>
+                <td>{h.product or '—'}</td>
+                <td>{h.country or '—'}</td>
+                <td><span class="badge badge-info">{h.source}</span></td>
+            </tr>"""
+
+        return f'''
+        <div class="panel fade-in">
+            <div class="panel-title">{result.total_found} Hosts Found</div>
+            <table class="data-table">
+                <thead><tr><th>IP</th><th>Port</th><th>Service</th><th>Product</th><th>Country</th><th>Source</th></tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+            <p style="color:var(--dim);margin-top:8px;font-size:12px;">
+                Sources: {", ".join(result.sources_queried)}
+                {" | Failed: " + ", ".join(result.sources_failed) if result.sources_failed else ""}
+            </p>
+        </div>
+        '''
 
     # ── REST API ──
 
@@ -86,23 +195,18 @@ def create_app(argus_home: str) -> Flask:
 
     @app.route("/api/compare")
     def api_compare():
-        """Compare two scans: /api/compare?a=SCAN_ID_1&b=SCAN_ID_2."""
         id_a = request.args.get("a", "")
         id_b = request.args.get("b", "")
         if not id_a or not id_b:
             return jsonify({"error": "Provide ?a=SCAN_ID&b=SCAN_ID"}), 400
-
         scan_a = _load_scan(scans_dir / id_a)
         scan_b = _load_scan(scans_dir / id_b)
         if not scan_a or not scan_b:
             abort(404)
-
         findings_a = {f.get("title", "") for f in scan_a.get("findings", [])}
         findings_b = {f.get("title", "") for f in scan_b.get("findings", [])}
-
         return jsonify({
-            "scan_a": id_a,
-            "scan_b": id_b,
+            "scan_a": id_a, "scan_b": id_b,
             "new_in_b": sorted(findings_b - findings_a),
             "resolved_in_b": sorted(findings_a - findings_b),
             "unchanged": sorted(findings_a & findings_b),
@@ -111,15 +215,8 @@ def create_app(argus_home: str) -> Flask:
     @app.route("/api/stats")
     def api_stats():
         scans = _list_scans(scans_dir)
-        risks = {}
-        for s in scans:
-            rl = (s.get("risk_summary") or {}).get("risk_level", "NONE")
-            risks[rl] = risks.get(rl, 0) + 1
-        return jsonify({
-            "total_scans": len(scans),
-            "total_findings": sum(len(s.get("findings", [])) for s in scans),
-            "risk_distribution": risks,
-        })
+        stats = _compute_stats(scans)
+        return jsonify(stats)
 
     return app
 
@@ -131,7 +228,7 @@ def _list_scans(scans_dir: Path) -> list[dict]:
         return []
     scans = []
     for scan_dir in sorted(scans_dir.iterdir(), reverse=True):
-        if not scan_dir.is_dir():
+        if not scan_dir.is_dir() or scan_dir.name.startswith("bulk-"):
             continue
         data = _load_scan(scan_dir)
         if data:
@@ -149,61 +246,121 @@ def _load_scan(scan_dir: Path) -> dict | None:
         return None
 
 
-# ── Dashboard HTML Template ──
+def _format_scans(scans: list[dict]) -> list[dict]:
+    rows = []
+    for s in scans:
+        rs = s.get("risk_summary") or {}
+        rows.append({
+            "scan_id": s.get("scan_id", ""),
+            "target": s.get("target", "?"),
+            "status": s.get("status", "?"),
+            "date": (s.get("started_at", "") or "")[:16].replace("T", " "),
+            "findings_count": len(s.get("findings", [])),
+            "risk": rs.get("risk_level", "NONE"),
+            "score": rs.get("overall_score", 0),
+            "tools": ", ".join(s.get("tools_used", [])[:5]),
+        })
+    return rows
 
-_DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Argus Dashboard</title>
-<style>
-  :root {{ --bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149; }}
-  * {{ box-sizing:border-box;margin:0;padding:0; }}
-  body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6; }}
-  .container {{ max-width:1200px;margin:0 auto;padding:30px 20px; }}
-  h1 {{ font-size:28px;margin-bottom:24px; }}
-  h1 span {{ color:var(--accent); }}
-  .cards {{ display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px; }}
-  .card {{ background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center; }}
-  .card .num {{ font-size:32px;font-weight:700; }}
-  .card .label {{ font-size:12px;color:var(--dim);margin-top:4px; }}
-  table {{ width:100%;border-collapse:collapse; }}
-  th {{ text-align:left;padding:10px 12px;background:rgba(110,118,129,.08);color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px; }}
-  td {{ padding:10px 12px;border-top:1px solid var(--border);font-size:14px; }}
-  tr:hover td {{ background:rgba(110,118,129,.06); }}
-  code {{ background:rgba(110,118,129,.2);padding:1px 5px;border-radius:3px;font-size:12px; }}
-  .refresh {{ float:right;color:var(--accent);text-decoration:none;font-size:14px; }}
-  .api-info {{ margin-top:24px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--dim);font-size:13px; }}
-  .api-info code {{ font-size:11px; }}
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>Argus <span>Dashboard</span> <a href="/" class="refresh">Refresh</a></h1>
 
-  <div class="cards">
-    <div class="card"><div class="num" style="color:var(--accent)">{total}</div><div class="label">Total Scans</div></div>
-    <div class="card"><div class="num" style="color:var(--yellow)">{findings}</div><div class="label">Total Findings</div></div>
-    <div class="card"><div class="num" style="color:var(--green)">{risk_none}</div><div class="label">NONE</div></div>
-    <div class="card"><div class="num" style="color:var(--accent)">{risk_low}</div><div class="label">LOW</div></div>
-    <div class="card"><div class="num" style="color:var(--yellow)">{risk_med}</div><div class="label">MEDIUM</div></div>
-    <div class="card"><div class="num" style="color:var(--red)">{risk_high}</div><div class="label">HIGH</div></div>
-  </div>
+def _compute_stats(scans: list[dict]) -> dict:
+    risks = {"NONE": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0}
+    total_findings = 0
+    total_cves = 0
+    for s in scans:
+        rs = s.get("risk_summary") or {}
+        rl = rs.get("risk_level", "NONE")
+        risks[rl] = risks.get(rl, 0) + 1
+        total_findings += len(s.get("findings", []))
+        total_cves += len(s.get("vulnerabilities", []))
+    return {
+        "total": len(scans),
+        "findings": total_findings,
+        "cves": total_cves,
+        "risk_none": risks["NONE"],
+        "risk_low": risks["LOW"],
+        "risk_med": risks["MEDIUM"],
+        "risk_high": risks["HIGH"],
+    }
 
-  <table>
-    <thead><tr><th>ID</th><th>Target</th><th>Status</th><th>Date</th><th>Findings</th><th>Risk</th><th>Tools</th></tr></thead>
-    <tbody>{rows}</tbody>
-  </table>
 
-  <div class="api-info">
-    <strong>REST API:</strong>
-    <code>GET /api/scans</code> &middot;
-    <code>GET /api/scans/{{id}}</code> &middot;
-    <code>GET /api/scans/{{id}}/findings</code> &middot;
-    <code>GET /api/compare?a={{id1}}&b={{id2}}</code> &middot;
-    <code>GET /api/stats</code>
-  </div>
-</div>
-</body>
-</html>"""
+def _load_settings(config_path: Path) -> dict:
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+        raw = yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        return {}
+
+    ak = raw.get("api_keys", {})
+    ai = raw.get("ai", {})
+    rl = raw.get("rate_limits", {})
+    n = raw.get("notifications", {})
+
+    return {
+        "shodan": ak.get("shodan", ""),
+        "virustotal": ak.get("virustotal", ""),
+        "censys_id": ak.get("censys_api_id", ""),
+        "censys_secret": ak.get("censys_api_secret", ""),
+        "zoomeye": ak.get("zoomeye_api_key", ""),
+        "fofa_email": ak.get("fofa_email", ""),
+        "fofa_key": ak.get("fofa_api_key", ""),
+        "greynoise": ak.get("greynoise_api_key", ""),
+        "nvd": ak.get("nvd_api_key", ""),
+        "ai_base_url": ai.get("base_url", "https://api.openai.com/v1"),
+        "ai_api_key": ai.get("api_key", ""),
+        "ai_model": ai.get("model", "gpt-4o"),
+        "ai_lang": ai.get("language", "en"),
+        "rate_global": rl.get("global_rps", 50),
+        "rate_per_target": rl.get("per_target_rps", 10),
+        "rate_concurrent": rl.get("concurrent_requests", 5),
+        "tg_token": n.get("telegram_token", ""),
+        "tg_chat_id": n.get("telegram_chat_id", ""),
+        "discord_webhook": n.get("discord_webhook", ""),
+    }
+
+
+def _save_settings(config_path: Path, form) -> None:
+    import os
+    import yaml
+
+    raw = {}
+    if config_path.exists():
+        try:
+            raw = yaml.safe_load(config_path.read_text()) or {}
+        except Exception:
+            raw = {}
+
+    raw["api_keys"] = {
+        "shodan": form.get("shodan", ""),
+        "virustotal": form.get("virustotal", ""),
+        "censys_api_id": form.get("censys_id", ""),
+        "censys_api_secret": form.get("censys_secret", ""),
+        "zoomeye_api_key": form.get("zoomeye", ""),
+        "fofa_email": form.get("fofa_email", ""),
+        "fofa_api_key": form.get("fofa_key", ""),
+        "greynoise_api_key": form.get("greynoise", ""),
+        "nvd_api_key": form.get("nvd", ""),
+    }
+    raw["ai"] = {
+        "enabled": bool(form.get("ai_api_key")),
+        "base_url": form.get("ai_base_url", "https://api.openai.com/v1"),
+        "api_key": form.get("ai_api_key", ""),
+        "model": form.get("ai_model", "gpt-4o"),
+        "language": form.get("ai_lang", "en"),
+    }
+    raw["rate_limits"] = {
+        "global_rps": int(form.get("rate_global", 50)),
+        "per_target_rps": int(form.get("rate_per_target", 10)),
+        "concurrent_requests": int(form.get("rate_concurrent", 5)),
+    }
+    raw["notifications"] = {
+        "telegram_token": form.get("tg_token", ""),
+        "telegram_chat_id": form.get("tg_chat_id", ""),
+        "discord_webhook": form.get("discord_webhook", ""),
+    }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+    os.chmod(config_path, 0o600)

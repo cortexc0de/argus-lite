@@ -96,8 +96,8 @@ class TestDashboardAPI:
     def test_api_stats(self, dashboard_client):
         resp = dashboard_client.get("/api/stats")
         data = resp.get_json()
-        assert data["total_scans"] == 2
-        assert data["total_findings"] == 2
+        assert data["total"] == 2
+        assert data["findings"] == 2
 
 
 class TestDashboardReport:

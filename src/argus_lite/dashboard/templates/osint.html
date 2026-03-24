@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Argus — OSINT Intelligence{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">OSINT Intelligence</h2>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Vulnerability Discovery</div>
+  <p style="color:var(--dim);margin-bottom:16px;">Search across Shodan, Censys, ZoomEye, and FOFA for vulnerable hosts.</p>
+  <form hx-post="/api/discover" hx-target="#osint-results" hx-indicator="#osint-spinner">
+    <div class="grid-3">
+      <div class="input-group">
+        <label>CVE</label>
+        <input type="text" name="cve" class="input-field" placeholder="CVE-2024-1234">
+      </div>
+      <div class="input-group">
+        <label>Technology</label>
+        <input type="text" name="tech" class="input-field" placeholder="WordPress 6.3">
+      </div>
+      <div class="input-group">
+        <label>Service</label>
+        <input type="text" name="service" class="input-field" placeholder="openssh, apache">
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="input-group">
+        <label>Port</label>
+        <input type="number" name="port" class="input-field" placeholder="3389">
+      </div>
+      <div class="input-group">
+        <label>Country</label>
+        <input type="text" name="country" class="input-field" placeholder="RU, US, DE">
+      </div>
+      <div class="input-group" style="display:flex;align-items:flex-end;">
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;">
+          <span class="htmx-indicator" id="osint-spinner"><span class="spinner"></span></span>
+          Search
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div id="osint-results">
+  <div class="panel">
+    <p style="color:var(--dim);text-align:center;padding:20px;">Enter search criteria above to discover hosts.</p>
+  </div>
+</div>
+{% endblock %}
