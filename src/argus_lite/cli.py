@@ -249,6 +249,16 @@ def scan(
     risk = score_scan(result)
     result.risk_summary = risk
 
+    # Correlation analysis
+    from argus_lite.core.correlation import CorrelationEngine
+
+    correlation = CorrelationEngine.correlate(result)
+    if correlation.risk_score > risk.overall_score:
+        risk.overall_score = correlation.risk_score
+        risk.risk_level = correlation.attack_surface
+        risk.breakdown["correlation"] = correlation.risk_score
+        result.risk_summary = risk
+
     # AI Analysis (optional)
     if use_ai or config.ai.enabled:
         from argus_lite.core.ai_analyzer import AIAnalyzer
