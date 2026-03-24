@@ -1,11 +1,11 @@
-"""Settings Tab — edit API keys, AI config, notifications, rate limits."""
+"""Settings Tab — clean, organized configuration editor."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.widgets import Button, Collapsible, Input, Label, Static, Switch
 
 from argus_lite.core.config import (
@@ -17,16 +17,36 @@ from argus_lite.core.config import (
 )
 from argus_lite.tui.messages import ConfigSaved
 
+_CSS = """
+SettingsTab { height: 1fr; }
+
+#settings-title {
+    color: #00ff41;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.key-label {
+    color: #58a6ff;
+    margin: 0 0 0 0;
+}
+
+.section-desc {
+    color: #8b949e;
+    margin: 0 0 1 0;
+}
+
+#save-settings {
+    margin-top: 2;
+    width: 100%;
+}
+"""
+
 
 class SettingsTab(Static):
-    """Tab for editing all Argus configuration."""
+    """Configuration editor with organized sections."""
 
-    DEFAULT_CSS = """
-    SettingsTab { height: 100%; padding: 1 2; }
-    .setting-row { height: 3; margin-bottom: 0; }
-    .setting-label { width: 22; padding: 1 0 0 0; }
-    #save-settings { margin-top: 1; }
-    """
+    DEFAULT_CSS = _CSS
 
     def __init__(self, config: AppConfig | None = None) -> None:
         super().__init__()
@@ -34,56 +54,62 @@ class SettingsTab(Static):
 
     def compose(self) -> ComposeResult:
         with VerticalScroll():
-            with Collapsible(title="API Keys", collapsed=False):
-                for key_id, label in [
-                    ("key-shodan", "Shodan"),
-                    ("key-virustotal", "VirusTotal"),
-                    ("key-censys-id", "Censys API ID"),
-                    ("key-censys-secret", "Censys Secret"),
-                    ("key-zoomeye", "ZoomEye"),
-                    ("key-fofa-email", "FOFA Email"),
-                    ("key-fofa-key", "FOFA Key"),
-                    ("key-greynoise", "GreyNoise"),
-                    ("key-nvd", "NVD"),
-                ]:
-                    yield Label(label)
-                    is_email = "email" in key_id
-                    yield Input(id=key_id, password=not is_email)
+            yield Label("CONFIGURATION", id="settings-title")
 
-            with Collapsible(title="AI Configuration"):
-                yield Label("Enabled")
+            with Collapsible(title="OSINT API Keys", collapsed=False):
+                yield Label("Connect to Shodan, Censys, ZoomEye, FOFA, GreyNoise, VirusTotal", classes="section-desc")
+                for key_id, label in [
+                    ("key-shodan", "Shodan API Key"),
+                    ("key-virustotal", "VirusTotal API Key"),
+                    ("key-censys-id", "Censys API ID"),
+                    ("key-censys-secret", "Censys API Secret"),
+                    ("key-zoomeye", "ZoomEye API Key"),
+                    ("key-fofa-email", "FOFA Email"),
+                    ("key-fofa-key", "FOFA API Key"),
+                    ("key-greynoise", "GreyNoise API Key"),
+                    ("key-nvd", "NVD API Key (CVE lookup)"),
+                ]:
+                    yield Label(label, classes="key-label")
+                    yield Input(id=key_id, password="email" not in key_id)
+
+            with Collapsible(title="AI Provider"):
+                yield Label("OpenAI-compatible API for scan analysis", classes="section-desc")
+                yield Label("Enabled", classes="key-label")
                 yield Switch(id="ai-enabled", value=False)
-                yield Label("Base URL")
-                yield Input(id="ai-base-url", value="https://api.openai.com/v1")
-                yield Label("API Key")
+                yield Label("Base URL", classes="key-label")
+                yield Input(id="ai-base-url", placeholder="https://api.openai.com/v1")
+                yield Label("API Key", classes="key-label")
                 yield Input(id="ai-api-key", password=True)
-                yield Label("Model")
-                yield Input(id="ai-model", value="gpt-4o")
+                yield Label("Model", classes="key-label")
+                yield Input(id="ai-model", placeholder="gpt-4o")
+                yield Label("Language (en/ru)", classes="key-label")
+                yield Input(id="ai-lang", placeholder="en")
 
             with Collapsible(title="Notifications"):
-                yield Label("Enabled")
+                yield Label("Telegram, Discord, Slack alerts", classes="section-desc")
+                yield Label("Enabled", classes="key-label")
                 yield Switch(id="notify-enabled", value=False)
-                yield Label("Telegram Token")
+                yield Label("Telegram Token", classes="key-label")
                 yield Input(id="notify-tg-token", password=True)
-                yield Label("Telegram Chat ID")
+                yield Label("Telegram Chat ID", classes="key-label")
                 yield Input(id="notify-tg-chatid")
-                yield Label("Discord Webhook")
+                yield Label("Discord Webhook", classes="key-label")
                 yield Input(id="notify-discord", password=True)
-                yield Label("Slack Webhook")
+                yield Label("Slack Webhook", classes="key-label")
                 yield Input(id="notify-slack", password=True)
 
             with Collapsible(title="Rate Limits"):
-                yield Label("Global RPS")
+                yield Label("Control scan speed", classes="section-desc")
+                yield Label("Global RPS", classes="key-label")
                 yield Input(id="rate-global", value="50")
-                yield Label("Per-target RPS")
+                yield Label("Per-target RPS", classes="key-label")
                 yield Input(id="rate-per-target", value="10")
-                yield Label("Concurrent")
+                yield Label("Concurrent requests", classes="key-label")
                 yield Input(id="rate-concurrent", value="5")
 
-            yield Button("Save Configuration", id="save-settings", variant="primary")
+            yield Button("SAVE CONFIGURATION", id="save-settings", variant="primary")
 
     def on_mount(self) -> None:
-        """Populate fields from current config."""
         k = self._config.api_keys
         self._set("key-shodan", k.shodan)
         self._set("key-virustotal", k.virustotal)
@@ -100,6 +126,7 @@ class SettingsTab(Static):
         self._set("ai-base-url", ai.base_url)
         self._set("ai-api-key", ai.api_key)
         self._set("ai-model", ai.model)
+        self._set("ai-lang", ai.language)
 
         n = self._config.notifications
         self.query_one("#notify-enabled", Switch).value = n.enabled
@@ -142,6 +169,7 @@ class SettingsTab(Static):
             base_url=self._get("ai-base-url"),
             api_key=self._get("ai-api-key"),
             model=self._get("ai-model"),
+            language=self._get("ai-lang") or "en",
         )
         self._config.notifications = NotificationConfig(
             enabled=self.query_one("#notify-enabled", Switch).value,
