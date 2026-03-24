@@ -202,6 +202,15 @@ def _apply_env_overrides(config: AppConfig) -> None:
             setattr(config.ai, attr, val)
 
 
+def save_config(config: AppConfig, config_path: Path) -> None:
+    """Save AppConfig to YAML file with secure permissions."""
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    data = config.model_dump(mode="json")
+    # Convert Path objects to strings for YAML serialization
+    config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    os.chmod(config_path, 0o600)
+
+
 def _check_permissions(config_path: Path) -> None:
     """Warn if config file permissions are too open."""
     try:

@@ -492,6 +492,105 @@ def bulk_scan(
     console.print(f"  [dim]Summary: {bulk_dir}/summary.html[/dim]")
 
 
+@main.command("discover")
+@click.option("--cve", default=None, help="Find hosts vulnerable to CVE (e.g. CVE-2024-1234)")
+@click.option("--tech", default=None, help="Find hosts running technology (e.g. 'WordPress 6.3')")
+@click.option("--service", default=None, help="Find hosts with service (e.g. 'openssh', 'apache')")
+@click.option("--port", "disc_port", type=int, default=None, help="Find hosts with open port")
+@click.option("--country", default=None, help="Filter by country code (e.g. RU, US, DE)")
+@click.option("--max-results", type=int, default=100, help="Max results per API")
+def discover(
+    cve: str | None,
+    tech: str | None,
+    service: str | None,
+    disc_port: int | None,
+    country: str | None,
+    max_results: int,
+) -> None:
+    """Discover vulnerable hosts across Shodan, Censys, ZoomEye, FOFA.
+
+    \b
+    Examples:
+      argus discover --cve CVE-2024-1234
+      argus discover --tech "WordPress 6.3"
+      argus discover --service openssh --port 22
+      argus discover --port 3389 --country RU
+    """
+    import asyncio
+
+    from rich.table import Table
+
+    from argus_lite.core.discovery_engine import DiscoveryEngine
+    from argus_lite.models.discover import DiscoverQuery
+
+    if not any([cve, tech, service, disc_port]):
+        console.print("[red]Specify at least one: --cve, --tech, --service, or --port[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[yellow]{LEGAL_NOTICE}[/yellow]")
+
+    config = _get_config()
+    engine = DiscoveryEngine(config)
+
+    query = DiscoverQuery(
+        cve=cve or "",
+        tech=tech or "",
+        service=service or "",
+        port=disc_port,
+        country=country or "",
+    )
+
+    console.print("[dim]Querying OSINT APIs...[/dim]")
+    result = asyncio.get_event_loop().run_until_complete(engine.discover(query))
+
+    if not result.hosts:
+        console.print("[yellow]No hosts found.[/yellow]")
+        if result.sources_queried:
+            console.print(f"[dim]Queried: {', '.join(result.sources_queried)}[/dim]")
+        else:
+            console.print("[dim]No API keys configured. Set ARGUS_SHODAN_KEY, ARGUS_CENSYS_ID, etc.[/dim]")
+        return
+
+    # Display results table
+    table = Table(title=f"Discovered Hosts ({result.total_found})", show_lines=False)
+    table.add_column("IP", style="cyan")
+    table.add_column("Port")
+    table.add_column("Service")
+    table.add_column("Product")
+    table.add_column("Country")
+    table.add_column("Org", style="dim")
+    table.add_column("Source", style="green")
+
+    for h in result.hosts[:max_results]:
+        table.add_row(
+            h.ip, str(h.port) if h.port else "—",
+            h.service or "—", h.product or "—",
+            h.country or "—", h.org or "—", h.source,
+        )
+
+    console.print(table)
+
+    # Summary
+    console.print()
+    console.print(f"[bold]{result.total_found} hosts[/bold] from {', '.join(result.sources_queried)}")
+    if result.sources_failed:
+        console.print(f"[yellow]Failed: {', '.join(result.sources_failed)}[/yellow]")
+
+    # Hint
+    console.print()
+    console.print("[dim]Tip: pipe to bulk scan:[/dim]")
+    query_desc = cve or tech or service or f"port:{disc_port}"
+    console.print(f"[dim]  argus discover --tech \"...\" | argus bulk --preset web[/dim]")
+
+    # Export IPs to stdout for piping
+    if result.hosts:
+        ips = [h.ip for h in result.hosts]
+        export_path = Path.home() / ".argus-lite" / "discover_results.txt"
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        export_path.write_text("\n".join(ips))
+        console.print(f"[dim]IPs saved: {export_path} (use: argus bulk {export_path})[/dim]")
+
+
 @main.command()
 def init() -> None:
     """Initialize Argus Lite configuration."""
