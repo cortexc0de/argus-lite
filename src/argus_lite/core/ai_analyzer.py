@@ -22,6 +22,7 @@ Respond ONLY with valid JSON matching this schema:
   "attack_chains": [{"name": "Chain name", "steps": ["Step 1", "Step 2"], "severity": "HIGH/MEDIUM/LOW", "likelihood": "HIGH/MEDIUM/LOW"}],
   "prioritized_findings": [{"original_id": "finding-id", "new_priority": 1, "reason": "Why this matters", "exploitability": "EASY/MODERATE/HARD"}],
   "recommendations": ["Specific actionable fix 1", "Fix 2"],
+  "remediation_commands": [{"finding_title": "Missing HSTS", "description": "Add HSTS header", "command": "add_header Strict-Transport-Security \\"max-age=31536000; includeSubDomains\\";", "platform": "nginx"}],
   "trend_analysis": "Changes since last scan (if provided)"
 }
 
@@ -30,7 +31,29 @@ Rules:
 - Focus on practical exploitability, not theoretical risk
 - This is a passive scanner (info/low severity only) — findings may indicate deeper issues
 - Recommendations must be actionable (not "update everything")
+- remediation_commands: provide concrete server config snippets (Nginx, Apache, iptables, etc.)
 - Do not invent findings that don't exist in the data"""
+
+SYSTEM_PROMPT_RU = """Ты — старший пентестер, анализирующий результаты сканирования безопасности.
+Задача: предоставить практические рекомендации на основе данных сканирования.
+Отвечай ТОЛЬКО на русском языке.
+
+Отвечай ТОЛЬКО валидным JSON по этой схеме:
+{
+  "executive_summary": "Обзор безопасности на 3-5 предложений",
+  "attack_chains": [{"name": "Название цепочки", "steps": ["Шаг 1", "Шаг 2"], "severity": "HIGH/MEDIUM/LOW", "likelihood": "HIGH/MEDIUM/LOW"}],
+  "prioritized_findings": [{"original_id": "finding-id", "new_priority": 1, "reason": "Почему это важно", "exploitability": "EASY/MODERATE/HARD"}],
+  "recommendations": ["Конкретное действие 1", "Действие 2"],
+  "remediation_commands": [{"finding_title": "Отсутствует HSTS", "description": "Добавить HSTS заголовок", "command": "add_header Strict-Transport-Security ...", "platform": "nginx"}],
+  "trend_analysis": "Изменения с прошлого сканирования (если есть)"
+}
+
+Правила:
+- Будь конкретен к технологическому стеку цели
+- Фокусируйся на практической эксплуатируемости
+- Рекомендации должны быть действенными
+- remediation_commands: предоставляй конкретные конфиги серверов
+- Не выдумывай находки, которых нет в данных"""
 
 
 class AIAnalyzer:
@@ -57,11 +80,14 @@ class AIAnalyzer:
     ) -> AIAnalysis:
         user_prompt = self._build_user_prompt(scan, previous_scan)
 
+        # Choose language-specific system prompt
+        sys_prompt = SYSTEM_PROMPT_RU if self._config.language == "ru" else SYSTEM_PROMPT
+
         url = f"{self._config.base_url.rstrip('/')}/chat/completions"
         payload = {
             "model": self._config.model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "max_tokens": self._config.max_tokens,

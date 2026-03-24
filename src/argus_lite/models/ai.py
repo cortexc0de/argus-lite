@@ -23,6 +23,15 @@ class PrioritizedFinding(BaseModel):
     exploitability: str = "MODERATE"  # EASY / MODERATE / HARD
 
 
+class RemediationCommand(BaseModel):
+    """A specific command or config snippet to fix a finding."""
+
+    finding_title: str = ""
+    description: str = ""
+    command: str = ""          # e.g. "add_header X-Frame-Options DENY;"
+    platform: str = ""         # nginx, apache, iptables, etc.
+
+
 class AIAnalysis(BaseModel):
     """Complete AI analysis of scan results."""
 
@@ -30,6 +39,7 @@ class AIAnalysis(BaseModel):
     attack_chains: list[AttackChain] = []
     prioritized_findings: list[PrioritizedFinding] = []
     recommendations: list[str] = []
+    remediation_commands: list[RemediationCommand] = []
     trend_analysis: str = ""
     model_used: str = ""
     tokens_used: int = 0

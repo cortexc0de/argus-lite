@@ -143,6 +143,16 @@ _HTML_TEMPLATE = Template("""\
     {% for rec in scan.ai_analysis.recommendations %}<li>{{ rec }}</li>{% endfor %}
   </ul>
   {% endif %}
+  {% if scan.ai_analysis.remediation_commands %}
+  <h3 style="margin-top:16px;font-size:15px;">Remediation Commands</h3>
+  {% for cmd in scan.ai_analysis.remediation_commands %}
+  <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
+    <strong>{{ cmd.finding_title }}</strong> <span style="color:var(--dim);font-size:12px;">{{ cmd.platform }}</span>
+    <div style="color:var(--dim);font-size:13px;">{{ cmd.description }}</div>
+    <pre style="background:#1c2128;padding:8px;border-radius:4px;margin-top:6px;font-size:12px;overflow-x:auto;"><code>{{ cmd.command }}</code></pre>
+  </div>
+  {% endfor %}
+  {% endif %}
   {% if scan.ai_analysis.trend_analysis %}
   <h3 style="margin-top:16px;font-size:15px;">Trend Analysis</h3>
   <p style="color:var(--dim);">{{ scan.ai_analysis.trend_analysis }}</p>

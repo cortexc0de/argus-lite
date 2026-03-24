@@ -107,6 +107,7 @@ class AIConfig(BaseModel):
     api_key: str = ""
     max_tokens: int = 4096
     timeout: int = 120
+    language: str = "en"       # "en" or "ru" — controls AI response language
 
 
 class BulkConfig(BaseModel):

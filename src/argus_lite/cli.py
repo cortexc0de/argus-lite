@@ -502,6 +502,73 @@ def bulk_scan(
     console.print(f"  [dim]Summary: {bulk_dir}/summary.html[/dim]")
 
 
+@main.command("monitor")
+@click.argument("target")
+@click.option("--interval", default="24h", help="Scan interval (e.g. 1h, 6h, 24h, 7d)")
+@click.option("--preset", type=click.Choice(["quick", "full", "web", "recon"]), default="quick")
+@click.option("--notify", is_flag=True, default=True, help="Notify on new findings")
+@click.option("--max-runs", type=int, default=None, help="Max number of runs (default: infinite)")
+def monitor(target: str, interval: str, preset: str, notify: bool, max_runs: int | None) -> None:
+    """Continuously monitor a target for new vulnerabilities.
+
+    \b
+    Examples:
+      argus monitor example.com --interval 24h
+      argus monitor example.com --interval 1h --preset web --max-runs 10
+    """
+    import asyncio
+
+    from argus_lite.core.monitor import MonitorSession
+    from argus_lite.models.monitor import MonitorConfig
+
+    # Parse interval
+    interval_map = {"h": 3600, "d": 86400, "m": 60}
+    try:
+        unit = interval[-1].lower()
+        num = int(interval[:-1])
+        seconds = num * interval_map.get(unit, 3600)
+    except (ValueError, IndexError):
+        seconds = 86400
+
+    console.print(f"[yellow]{LEGAL_NOTICE}[/yellow]")
+    console.print(f"[bold green]Monitoring: {target}[/bold green]")
+    console.print(f"  Interval: {interval} ({seconds}s) | Preset: {preset}")
+    if max_runs:
+        console.print(f"  Max runs: {max_runs}")
+    console.print(f"  Notify: {'yes' if notify else 'no'}")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    config = _get_config()
+    mc = MonitorConfig(
+        target=target,
+        interval_seconds=seconds,
+        notify_on_new=notify,
+        max_runs=max_runs,
+        preset=preset,
+    )
+
+    def on_run(run) -> None:
+        colors = {"NONE": "green", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red"}
+        rc = colors.get(run.risk_level, "white")
+        console.print(
+            f"[dim]Run {run.run_number}[/dim] | "
+            f"[{rc}]{run.risk_level}[/{rc}] | "
+            f"Findings: {run.findings_count} | "
+            f"[green]+{run.new_count}[/green] new, "
+            f"[red]-{run.resolved_count}[/red] resolved"
+        )
+
+    session = MonitorSession(mc, config, on_run_complete=on_run)
+
+    try:
+        asyncio.get_event_loop().run_until_complete(session.start())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Monitoring stopped.[/yellow]")
+        asyncio.get_event_loop().run_until_complete(session.stop())
+
+    console.print(f"[dim]Total runs: {len(session._state.runs)}[/dim]")
+
+
 @main.command("discover")
 @click.option("--cve", default=None, help="Find hosts vulnerable to CVE (e.g. CVE-2024-1234)")
 @click.option("--tech", default=None, help="Find hosts running technology (e.g. 'WordPress 6.3')")
