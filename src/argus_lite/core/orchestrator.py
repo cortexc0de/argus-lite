@@ -482,6 +482,75 @@ class ScanOrchestrator:
         if group_b:
             await run_parallel(group_b)
 
+        # Convert nuclei findings + risky ports + CVEs into Finding objects
+        self._collect_findings_from_analysis()
+
+    def _collect_findings_from_analysis(self) -> None:
+        """Convert analysis results into Finding objects for the report."""
+        # Nuclei findings → Finding objects
+        for nf in self._analysis_result.nuclei_findings:
+            sev = nf.severity.upper() if nf.severity else "INFO"
+            if sev not in ("INFO", "LOW"):
+                sev = "LOW"  # enforce ceiling
+            f = Finding(
+                id=f"nuclei-{nf.template_id}",
+                type="nuclei",
+                severity=sev,
+                title=nf.name or nf.template_id,
+                description=nf.description or f"Nuclei template {nf.template_id} matched",
+                asset=nf.matched_at or self.target,
+                evidence=f"Template: {nf.template_id}, tags: {', '.join(nf.tags)}",
+                source="nuclei",
+                remediation="Review and fix the identified issue",
+            )
+            self._findings.append(f)
+            if self._on_finding:
+                self._on_finding(f)
+
+        # Risky open ports → Finding objects
+        _RISKY = {21: "FTP", 23: "Telnet", 445: "SMB", 3389: "RDP",
+                   1433: "MSSQL", 3306: "MySQL", 5432: "PostgreSQL",
+                   6379: "Redis", 27017: "MongoDB", 11211: "Memcached"}
+        for port in self._analysis_result.open_ports:
+            if port.port in _RISKY:
+                svc = _RISKY[port.port]
+                f = Finding(
+                    id=f"risky-port-{port.port}",
+                    type="exposed_service",
+                    severity="LOW",
+                    title=f"Exposed {svc} ({port.port}/{port.protocol})",
+                    description=f"{svc} service on port {port.port} is externally accessible",
+                    asset=self.target,
+                    evidence=f"Port {port.port}/{port.protocol} open, service: {port.service or svc}",
+                    source="naabu",
+                    remediation=f"Restrict access to {svc} via firewall or bind to localhost",
+                )
+                self._findings.append(f)
+                if self._on_finding:
+                    self._on_finding(f)
+
+        # Discovered paths (ffuf) with sensitive status codes → Finding
+        for fr in self._analysis_result.fuzz_results:
+            if fr.status_code in (200, 301, 302, 403) and any(
+                kw in fr.url.lower() for kw in
+                ("/admin", "/backup", "/.git", "/.env", "/wp-admin", "/phpmyadmin",
+                 "/config", "/debug", "/api/", "/.htaccess")
+            ):
+                f = Finding(
+                    id=f"fuzz-{fr.url}",
+                    type="sensitive_path",
+                    severity="LOW",
+                    title=f"Sensitive path found: {fr.url}",
+                    description=f"HTTP {fr.status_code} at {fr.url}",
+                    asset=self.target,
+                    evidence=f"Status: {fr.status_code}, Length: {fr.content_length}",
+                    source="ffuf",
+                    remediation="Restrict access or remove sensitive endpoint",
+                )
+                self._findings.append(f)
+                if self._on_finding:
+                    self._on_finding(f)
+
     async def _run_cve_enrichment(self) -> None:
         """Query NVD API for CVEs matching detected technologies."""
         from argus_lite.core.cve_enricher import CveEnricher
