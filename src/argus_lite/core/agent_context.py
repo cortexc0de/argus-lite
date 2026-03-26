@@ -137,8 +137,12 @@ class AgentContext:
         scan_result: ScanResult | None = None,
         skill_registry: "SkillRegistry | None" = None,
         memory: "AgentMemory | None" = None,
+        environment: "Any | None" = None,
+        stealth: "Any | None" = None,
     ) -> None:
         self.target = target
+        self.environment = environment  # EnvironmentProfile
+        self.stealth = stealth          # StealthConfig
         self.scan_result = scan_result or ScanResult(
             scan_id="agent", target=target, target_type="domain",
             status="running", started_at=datetime.now(tz=timezone.utc),
@@ -202,6 +206,25 @@ class AgentContext:
             mem_ctx = self.memory.get_context_for_target(self.target)
             if mem_ctx:
                 lines.append(f"\nMemory: {mem_ctx}")
+
+        # Environment awareness
+        if self.environment:
+            env = self.environment
+            env_parts = []
+            if env.waf_detected:
+                env_parts.append(f"WAF: {env.waf_type or 'detected'}")
+            if env.cdn:
+                env_parts.append(f"CDN: {env.cdn}")
+            if env.server:
+                env_parts.append(f"Server: {env.server}")
+            if env.anti_bot:
+                env_parts.append("Anti-bot: active")
+            if env_parts:
+                lines.append(f"\nEnvironment: {', '.join(env_parts)}")
+
+        # Stealth mode
+        if self.stealth and self.stealth.enabled:
+            lines.append(f"Stealth: ON (delay={self.stealth.delay_ms}ms)")
 
         # Available skills
         if self.skill_registry:

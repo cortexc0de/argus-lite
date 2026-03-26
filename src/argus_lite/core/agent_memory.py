@@ -146,3 +146,56 @@ class AgentMemory:
             return 0.0
         with_findings = sum(1 for findings in self.past_findings.values() if findings)
         return with_findings / total
+
+    # ── Pattern Learning (v5) ──
+
+    def extract_patterns(self) -> list[dict]:
+        """Analyze stored payloads+targets → generalize into attack patterns.
+
+        Returns: [{"tech": "wordpress", "vuln_type": "xss", "success_count": 3, "confidence": 0.75}]
+        """
+        # Count: (tech, vuln_type) → success_count
+        counts: dict[tuple[str, str], int] = {}
+
+        for target, payloads in self.successful_payloads.items():
+            techs = self.target_patterns.get(target, {}).get("tech_stack", [])
+            for payload in payloads:
+                vuln = payload.get("vuln_type", "")
+                if not vuln:
+                    continue
+                for tech in techs:
+                    key = (tech.lower(), vuln.lower())
+                    counts[key] = counts.get(key, 0) + 1
+
+        patterns = []
+        for (tech, vuln), count in sorted(counts.items(), key=lambda x: -x[1]):
+            patterns.append({
+                "tech": tech,
+                "vuln_type": vuln,
+                "success_count": count,
+                "confidence": min(1.0, count / 5.0),  # normalize to 1.0 at 5 successes
+            })
+
+        return patterns
+
+    def suggest_attacks(self, tech_stack: list[str]) -> list[str]:
+        """Based on patterns, suggest which vuln types to test first for this tech."""
+        if not tech_stack:
+            return []
+
+        tech_lower = {t.lower() for t in tech_stack}
+        patterns = self.extract_patterns()
+
+        # Filter patterns matching this tech stack
+        relevant = [p for p in patterns if p["tech"] in tech_lower]
+
+        # Deduplicate by vuln_type, keep highest confidence
+        seen: dict[str, float] = {}
+        for p in relevant:
+            vt = p["vuln_type"]
+            if vt not in seen or p["confidence"] > seen[vt]:
+                seen[vt] = p["confidence"]
+
+        # Sort by confidence descending
+        ranked = sorted(seen.items(), key=lambda x: -x[1])
+        return [vt for vt, _ in ranked]
