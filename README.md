@@ -6,14 +6,14 @@
   <p align="center">
     <a href="#installation">Installation</a> •
     <a href="#agent-mode">Agent Mode</a> •
-    <a href="#commands">Commands</a> •
+    <a href="#multi-agent">Multi-Agent</a> •
     <a href="#skill-system">Skills</a> •
-    <a href="#web-dashboard">Dashboard</a> •
-    <a href="#api">API</a>
+    <a href="#commands">Commands</a> •
+    <a href="#web-dashboard">Dashboard</a>
   </p>
   <p align="center">
-    <img src="https://img.shields.io/badge/version-3.0.0-00ff41?style=flat-square" alt="Version">
-    <img src="https://img.shields.io/badge/tests-647_passed-brightgreen?style=flat-square" alt="Tests">
+    <img src="https://img.shields.io/badge/version-4.0.0-00ff41?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/tests-675_passed-brightgreen?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/tools-15-orange?style=flat-square" alt="Tools">
     <img src="https://img.shields.io/badge/skills-11-ff6b6b?style=flat-square" alt="Skills">
     <img src="https://img.shields.io/badge/OSINT_APIs-7-blue?style=flat-square" alt="OSINT">
@@ -24,138 +24,149 @@
 
 ---
 
-Argus is an **autonomous pentesting agent** where the LLM is the brain — it plans attacks, executes tools through a formal skill system, adapts strategy based on results, and remembers what worked across sessions.
+Argus is an **autonomous AI pentesting agent** — the LLM acts as a thinking attacker: it builds branching attack plans, chains exploits into attack graphs, scores targets by value, refines payloads iteratively, and coordinates specialized sub-agents.
 
 ```
-LLM ≠ scanner.  LLM = brain.
-Tools = hands.   Skills = actions.   Memory = experience.
+LLM = brain (plans, decides, adapts)
+Skills = hands (executes real tools)
+Memory = experience (learns across sessions)
 ```
 
 > **Legal:** For authorized security testing only. Always obtain written permission.
 
 ---
 
-## How It Works
+## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│          LLM Agent (brain)          │
-│                                     │
-│  1. Plan attack based on recon      │
-│  2. Choose skill to execute         │
-│  3. Receive result                  │
-│  4. Adapt strategy                  │
-│  5. Repeat until done               │
-└──────────────┬──────────────────────┘
-               │ decide → execute → feedback
-┌──────────────▼──────────────────────┐
-│     Skill System (11 skills)        │
-│                                     │
-│  enumerate_subdomains  probe_http   │
-│  crawl_site   scan_nuclei           │
-│  fuzz_paths   scan_xss (Dalfox)     │
-│  scan_sqli (SQLMap)  scan_ports     │
-│  check_headers  detect_tech         │
-│  test_payload (custom HTTP)         │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│     15 Tools + 7 OSINT APIs         │
-│                                     │
-│  subfinder httpx katana nuclei      │
-│  naabu ffuf dalfox sqlmap           │
-│  dnsx tlsx gau gowitness whatweb    │
-│  interactsh gf-patterns             │
-│                                     │
-│  Shodan Censys ZoomEye FOFA         │
-│  GreyNoise VirusTotal SecurityTrails│
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│     Memory + Reports                │
-│                                     │
-│  Persistent memory (JSON)           │
-│  HTML / JSON / Markdown / SARIF     │
-│  Web dashboard (Flask + htmx)       │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│           LLM Agent (brain)             │
+│                                         │
+│  Plan Tree → Target Scoring →          │
+│  Skill Execution → Attack Graph →      │
+│  Adaptive Payloads → Memory →          │
+│  Adapt → Repeat                        │
+└───────────────┬─────────────────────────┘
+                │
+┌───────────────▼─────────────────────────┐
+│  Multi-Agent Team (v4)                  │
+│                                         │
+│  Recon Agent    → subdomains, ports     │
+│  Vuln Scanner   → nuclei, headers, ffuf │
+│  Exploit Agent  → XSS, SQLi, payloads   │
+└───────────────┬─────────────────────────┘
+                │
+┌───────────────▼─────────────────────────┐
+│  Skill System (11 skills)               │
+│  enumerate_subdomains  probe_http        │
+│  crawl_site   scan_nuclei  fuzz_paths   │
+│  scan_xss (Dalfox)  scan_sqli (SQLMap)  │
+│  check_headers  detect_tech  scan_ports │
+│  test_payload (adaptive HTTP)           │
+└───────────────┬─────────────────────────┘
+                │
+┌───────────────▼─────────────────────────┐
+│  15 Tools + 7 OSINT APIs                │
+│  subfinder httpx katana nuclei naabu    │
+│  ffuf dalfox sqlmap dnsx tlsx gau       │
+│  gowitness whatweb interactsh gf        │
+│  Shodan Censys ZoomEye FOFA GreyNoise   │
+│  VirusTotal SecurityTrails              │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
 ## Agent Mode
 
-The core of Argus v3. The agent runs a **closed execution loop**:
+```bash
+argus agent example.com               # autonomous single agent
+argus agent example.com --multi-agent # specialized 3-agent team
+argus agent example.com --max-steps 15
+```
+
+### How it works (v4)
+
+**1. Plan Tree** — LLM builds branching attack strategies, not a linear list:
+```
+Goal: "Find data access vulnerabilities"
+├── Branch A: API testing (confidence=0.9)
+│   ├── scan_sqli /api/user?id=    [pending]
+│   └── test_payload custom bypass [pending]
+└── Branch B: Auth bypass (confidence=0.6)
+    ├── check_headers              [completed ✓]
+    └── scan_nuclei /login         [pending]
+```
+Agent always picks the highest-confidence pending node next.
+
+**2. Attack Graph** — findings connect into exploit chains:
+```
+XSS in /search ──────────────────→ Session Hijack (p=0.6)
+SQLi in /api/user?id ──────────── → Database Access (p=0.8)
+SQLi in /api/user?id ──────────── → Auth Bypass (p=0.5)
+Missing CSRF protection ──────────→ Clickjacking (p=0.3)
+```
+LLM sees the graph and prioritizes high-probability chains.
+
+**3. Target Scoring** — endpoints scored before execution:
+```
+CRITICAL  /admin              → auth_bypass, IDOR
+HIGH      /api/user?id=123    → IDOR, SQLi
+HIGH      /redirect?url=      → SSRF, open_redirect
+HIGH      /graphql             → introspection, IDOR
+MEDIUM    /search?q=test       → XSS, SQLi
+SKIP      /static/style.css   → (skipped)
+```
+
+**4. Adaptive Payload Loop** — payloads refine based on response:
+```
+Attempt 1: <script>alert(1)</script>  → BLOCKED by WAF
+Attempt 2: <ScRiPt>alert(1)</sCrIpT>  → HTTP 200, reflected ✓
+```
+Each attempt feeds back to LLM for WAF bypass techniques.
+
+**5. Smart Memory** — learns across sessions:
+- Jaccard similarity to find past targets with same tech stack
+- Reuses payloads that worked on similar tech+vuln combos
+- Cross-target learning: "WordPress 6.x → this XSS worked before"
+
+---
+
+## Multi-Agent Mode
 
 ```bash
-argus agent example.com
+argus agent example.com --multi-agent
 ```
 
-```
-AGENT MODE v3 — Autonomous pentesting with skill execution
-Target: example.com | Max steps: 15
+Three specialized agents run sequentially, each with restricted skills:
 
-Phase 1: Quick recon scan
-  ✓ recon
-  ✓ analysis
+| Agent | Skills | Focus |
+|---|---|---|
+| **Recon** | subfinder, httpx, katana, whatweb, naabu | Discovery: subdomains, ports, tech |
+| **Vuln Scanner** | nuclei, check_headers, ffuf | Detection: known vulns, misconfigs |
+| **Exploit** | dalfox, sqlmap, test_payload | Exploitation: XSS, SQLi, custom payloads |
 
-Phase 2: LLM creates attack plan
-  Goal: "Test API endpoints for IDOR and injection vulnerabilities"
-
-Phase 3: Execute skills
-  Step 1: "API has user ID parameter — testing for IDOR"
-  → scan_sqli OK
-  Found 2 injection points
-
-  Step 2: "Checking for XSS in search parameter"
-  → scan_xss OK
-  Dalfox found 1 reflected XSS
-
-  Step 3: "Testing custom payload with WAF bypass"
-  → test_payload OK
-  HTTP 200, payload reflected in response
-
-  Step 4: "All high-priority vectors tested"
-  → done
-  Assessment complete: 3 vulnerabilities found
-
-══════════════════════════════════════════════════
-Agent complete
-  Goal: Test API endpoints for IDOR and injection
-  Steps: 4 | Skills: scan_sqli, scan_xss, test_payload
-  Findings: 12
-  Risk: HIGH
-```
-
-**What makes it autonomous:**
-- **Plans before executing** — LLM builds goal-based attack plan from recon data
-- **Executes skills** — actually runs tools, not just prints decisions
-- **Feeds results back** — skill output goes into LLM context for next decision
-- **Adapts on failure** — if a skill fails, LLM adjusts the plan
-- **Remembers** — successful payloads and patterns saved to `~/.argus-lite/agent/memory.json`
+Each agent has its own LLM decision loop. Results flow from Recon → Vuln Scanner → Exploit.
 
 ---
 
 ## Skill System
 
-11 skills wrapping existing tools with a uniform interface:
+11 skills wrap existing tools with a uniform interface:
 
 | Skill | Tool | What it does |
 |---|---|---|
 | `enumerate_subdomains` | subfinder | Find subdomains |
-| `probe_http` | httpx | Check which hosts are alive |
-| `crawl_site` | katana | Discover URLs and endpoints |
-| `scan_nuclei` | nuclei | Vulnerability templates |
+| `probe_http` | httpx | Check live hosts |
+| `crawl_site` | katana | Discover all URLs |
+| `scan_nuclei` | nuclei | Template-based vuln scanning |
 | `fuzz_paths` | ffuf | Directory brute-force |
-| `scan_xss` | dalfox | XSS testing (reflected, stored, DOM) |
-| `scan_sqli` | sqlmap | SQL injection testing |
-| `check_headers` | httpx (Python) | Security header analysis |
-| `detect_tech` | whatweb | Technology identification |
+| `scan_xss` | dalfox | XSS (reflected, stored, DOM) |
+| `scan_sqli` | sqlmap | SQL injection |
+| `check_headers` | httpx | Security header analysis |
+| `detect_tech` | whatweb | Technology fingerprinting |
 | `scan_ports` | naabu | TCP port scanning |
-| `test_payload` | httpx (Python) | Custom HTTP request with payload + reflection detection |
-
-Each skill: `execute(params, context) → SkillResult(success, data, findings, summary)`
-
-The LLM chooses which skill to run based on context. Skills can be extended via the plugin system.
+| `test_payload` | httpx | Custom HTTP + reflection/error detection |
 
 ---
 
@@ -181,33 +192,34 @@ docker run -v ./reports:/reports ghcr.io/cortexc0de/argus-lite scan example.com 
 
 ### Agent (autonomous)
 ```bash
-argus agent example.com                    # LLM-driven autonomous pentest
-argus agent example.com --max-steps 15     # More iterations
+argus agent TARGET                   # autonomous single agent (plan tree + attack graph)
+argus agent TARGET --multi-agent     # 3-agent team
+argus agent TARGET --max-steps 15    # more iterations
 ```
 
-### Scan (manual)
+### Scan (pipeline)
 ```bash
-argus scan TARGET --preset full --ai       # Full scan + AI analysis
-argus scan TARGET --preset quick           # Fast (DNS + headers + SSL)
-argus scan TARGET --preset web             # Web focused (httpx + nuclei + dalfox)
-argus scan TARGET --no-cve                 # Skip CVE lookup (faster)
+argus scan TARGET --preset full --ai   # full scan + AI analysis
+argus scan TARGET --preset quick       # fast (DNS + headers + SSL)
+argus scan TARGET --preset web         # web focus (httpx + nuclei + dalfox)
+argus scan TARGET --no-cve             # skip CVE lookup
 ```
 
 ### Discover (find vulnerable hosts)
 ```bash
-argus discover --cve CVE-2024-1234         # By CVE
-argus discover --tech "WordPress 6.3"      # By technology
-argus discover --port 3389 --country RU    # By port + country
+argus discover --cve CVE-2024-1234     # by CVE across Shodan/Censys/ZoomEye/FOFA
+argus discover --tech "WordPress 6.3"  # by technology
+argus discover --port 3389 --country RU
 ```
 
 ### Bulk (multi-target)
 ```bash
-argus bulk targets.txt                     # From file
-argus bulk 192.168.1.0/24                  # From CIDR
-argus bulk --shodan "org:Company"          # From Shodan
-argus bulk --censys "services.port:443"    # From Censys
-argus bulk --zoomeye "app:nginx"           # From ZoomEye
-argus bulk --fofa 'domain="example.com"'   # From FOFA
+argus bulk targets.txt
+argus bulk 192.168.1.0/24
+argus bulk --shodan "org:Company"
+argus bulk --censys "services.port:443"
+argus bulk --zoomeye "app:nginx"
+argus bulk --fofa 'domain="example.com"'
 ```
 
 ### Monitor (continuous)
@@ -215,43 +227,36 @@ argus bulk --fofa 'domain="example.com"'   # From FOFA
 argus monitor example.com --interval 24h --notify
 ```
 
-### Dashboard (web UI)
+### Dashboard
 ```bash
-argus dashboard                            # http://127.0.0.1:8443
+argus dashboard                        # http://127.0.0.1:8443
 ```
 
 ### Config
 ```bash
-argus config ai                            # Set up AI provider
-argus config show                          # Show config
-argus tools check                          # Verify tools
+argus config ai                        # set AI provider
+argus tools check                      # verify all tools
 ```
 
 ---
 
-## Smart Pipeline
-
-When not using agent mode, the standard scan pipeline:
+## Scan Pipeline (non-agent mode)
 
 ```
-OSINT (parallel): Shodan, Censys, ZoomEye, FOFA, GreyNoise, VT, ST
+OSINT:    Shodan, Censys, ZoomEye, FOFA, GreyNoise, VirusTotal, SecurityTrails
   ↓
-Recon Group 1: DNS, WHOIS, subdomains, certificates
+Recon:    subfinder, dnsx, httpx, katana, gau, tlsx, gowitness
   ↓
-Recon Group 2: httpx, katana, gau, dnsx, tlsx, gowitness
+Analysis A: naabu (ports), whatweb (tech), headers, SSL
   ↓
-Analysis A (parallel): ports, techstack, headers, SSL
+Analysis B: nuclei, ffuf
   ↓
-Analysis B (parallel): nuclei, ffuf
+Analysis C: dalfox (XSS), sqlmap (SQLi)  ← gf patterns filter URLs first
   ↓
-Analysis C (parallel): dalfox (XSS), sqlmap (SQLi)
+CVE Correlation (NVD API) → Correlation Engine → AI Analysis (with remediation)
   ↓
-CVE Correlation (NVD API) → Correlation Engine → AI Analysis
-  ↓
-Report (HTML / JSON / Markdown / SARIF)
+Report: HTML / JSON / Markdown / SARIF
 ```
-
-Data flows between tools: subdomains→httpx, crawl→ffuf, gf→dalfox, tech tags→nuclei.
 
 ---
 
@@ -261,39 +266,31 @@ Data flows between tools: subdomains→httpx, crawl→ffuf, gf→dalfox, tech ta
 argus dashboard   # → http://127.0.0.1:8443
 ```
 
-Flask + htmx dark theme UI:
-- **Dashboard** — stat cards, risk distribution chart (Chart.js), scan history
-- **New Scan** — launch scans from browser, htmx live updates
-- **OSINT** — search Shodan/Censys/ZoomEye/FOFA interactively
-- **Settings** — API keys, AI config, notifications, rate limits
-- **Reports** — click any scan to view full HTML report
+- **Dashboard** — stats, risk chart (Chart.js), scan history
+- **New Scan** — launch from browser with htmx
+- **OSINT** — search all APIs interactively
+- **Settings** — API keys, AI, notifications, rate limits
 
-REST API:
-```
-GET  /api/scans                    GET  /api/scans/{id}
-GET  /api/scans/{id}/findings      GET  /api/compare?a={id}&b={id}
-GET  /api/stats                    POST /api/scan/start
-POST /api/discover
-```
+REST API: `/api/scans`, `/api/scans/{id}`, `/api/compare?a={id}&b={id}`, `/api/stats`
 
 ---
 
 ## OSINT API Keys
 
-All optional. Configure via `argus config ai`, web Settings, or env vars:
-
 ```bash
-export ARGUS_SHODAN_KEY="..."           # shodan.io
-export ARGUS_CENSYS_ID="..."            # censys.io
-export ARGUS_CENSYS_SECRET="..."        # censys.io
-export ARGUS_ZOOMEYE_KEY="..."          # zoomeye.org
-export ARGUS_FOFA_EMAIL="..."           # fofa.info
-export ARGUS_FOFA_KEY="..."             # fofa.info
-export ARGUS_GREYNOISE_KEY="..."        # greynoise.io (optional — community works free)
-export ARGUS_VIRUSTOTAL_KEY="..."       # virustotal.com
-export ARGUS_NVD_KEY="..."              # nvd.nist.gov (free, faster CVE lookups)
-export ARGUS_AI_KEY="..."               # OpenAI / Ollama / vLLM / any compatible
+export ARGUS_SHODAN_KEY="..."
+export ARGUS_CENSYS_ID="..."
+export ARGUS_CENSYS_SECRET="..."
+export ARGUS_ZOOMEYE_KEY="..."
+export ARGUS_FOFA_EMAIL="..."
+export ARGUS_FOFA_KEY="..."
+export ARGUS_GREYNOISE_KEY="..."   # optional — community tier is free
+export ARGUS_VIRUSTOTAL_KEY="..."
+export ARGUS_NVD_KEY="..."         # free, improves CVE rate limit
+export ARGUS_AI_KEY="..."          # OpenAI / Ollama / vLLM / any compatible
 ```
+
+Or configure via `argus config ai` or web Settings.
 
 ---
 
@@ -314,16 +311,16 @@ export ARGUS_AI_KEY="..."               # OpenAI / Ollama / vLLM / any compatibl
 
 | Version | Highlights |
 |---|---|
-| **v3.0.0** | **Autonomous Agent** — closed execution loop, 11 skills, attack planner, persistent memory |
-| v2.0.0 | AI agent mode (reactive), JWT auth, threat intel, elite tools (Dalfox/SQLMap/Interactsh) |
-| v1.8.0 | Web Dashboard v2 (Flask + htmx, REST API, Chart.js) |
-| v1.7.0 | Correlation Engine, plugin integration into orchestrator |
-| v1.6.0 | Continuous Monitoring, Enhanced AI (Russian, remediation commands) |
-| v1.5.0 | Full TUI (5 tabs), Discovery Engine |
+| **v4.0.0** | **Plan Trees** (branching), **Attack Graphs** (chains), **Adaptive Payloads** (WAF bypass loop), **Target Scoring**, **Multi-Agent** (3 specialized agents), Smart Memory (Jaccard similarity) |
+| v3.0.0 | Closed execution loop — skills actually run, not just printed; AgentPlanner, SkillRegistry, AgentMemory |
+| v2.0.0 | Agent mode (reactive), elite tools (Dalfox/SQLMap/Interactsh), JWT auth, threat intel |
+| v1.8.0 | Web dashboard v2 (Flask + htmx, REST API, charts) |
+| v1.6.0 | Continuous monitoring, enhanced AI (Russian, remediation commands) |
+| v1.5.0 | Full TUI (5 tabs), vulnerability discovery engine |
 | v1.3.0 | Censys, ZoomEye, FOFA, GreyNoise APIs |
-| v1.2.0 | Bulk Scanner (file/CIDR/ASN/Shodan) |
-| v1.1.0 | CVE Correlation, YAML templates, GitHub Actions, Docker |
-| v1.0.0 | Initial: 11 tools, 3 OSINT APIs, smart pipeline, AI analysis |
+| v1.2.0 | Bulk scanner (file/CIDR/ASN) |
+| v1.1.0 | CVE correlation, YAML templates, GitHub Actions, Docker |
+| v1.0.0 | Initial: 11 tools, 3 OSINT APIs, smart pipeline |
 
 ---
 
@@ -331,31 +328,30 @@ export ARGUS_AI_KEY="..."               # OpenAI / Ollama / vLLM / any compatibl
 
 ```
 src/argus_lite/
-├── cli.py                        # All commands: agent, scan, bulk, discover, monitor, dashboard
+├── cli.py                      # All commands: agent, scan, bulk, discover, monitor...
 ├── core/
-│   ├── agent.py                  # PentestAgent v3 + AgentPlanner (closed execution loop)
-│   ├── skills.py                 # Skill ABC + 11 implementations + SkillRegistry
-│   ├── agent_context.py          # AgentContext, AgentPlan, AgentStep, AgentResult
-│   ├── agent_memory.py           # Persistent JSON memory across sessions
-│   ├── orchestrator.py           # ScanOrchestrator (6 presets, smart pipeline)
-│   ├── discovery_engine.py       # Vulnerability discovery across OSINT APIs
-│   ├── bulk_scanner.py           # Multi-target with concurrency
-│   ├── monitor.py                # Continuous monitoring with diff + notify
-│   ├── ai_analyzer.py            # Post-scan AI analysis (remediation, Russian)
-│   ├── cve_enricher.py           # NVD API v2.0 CVE correlation
-│   ├── correlation.py            # Attack surface scoring engine
-│   ├── config.py                 # AppConfig (Pydantic v2, YAML, env overrides)
-│   └── threat_intel.py           # Recent CVE feed for your tech stack
+│   ├── agent.py                # PentestAgent (plan tree, attack graph, closed loop)
+│   ├── agent_context.py        # PlanTree, PlanNode, AgentContext, AgentResult
+│   ├── agent_memory.py         # SmartMemory (Jaccard similarity, cross-target learning)
+│   ├── attack_graph.py         # AttackGraph (nodes, edges, exploit chains)
+│   ├── payload_engine.py       # PayloadEngine (try → analyze → refine → retry)
+│   ├── target_scorer.py        # TargetScorer (critical/high/medium/low/skip)
+│   ├── multi_agent.py          # AgentTeam (Recon + Vuln Scanner + Exploit)
+│   ├── skills.py               # Skill ABC + 11 implementations + SkillRegistry
+│   ├── orchestrator.py         # ScanOrchestrator (presets, parallel pipeline)
+│   ├── discovery_engine.py     # Vulnerability discovery across OSINT
+│   ├── bulk_scanner.py         # Multi-target concurrency
+│   ├── monitor.py              # Continuous monitoring with diff + notify
+│   ├── ai_analyzer.py          # Post-scan AI (remediation commands, Russian)
+│   ├── cve_enricher.py         # NVD API CVE correlation
+│   ├── correlation.py          # Cross-reference OSINT + CVE + ports
+│   └── config.py               # AppConfig (Pydantic v2)
 ├── modules/
-│   ├── recon/                    # 10 recon + 7 OSINT API modules
-│   ├── analysis/                 # nuclei, ports, techstack, headers, ssl, ffuf,
-│   │                             # dalfox, sqlmap, gf_patterns, interactsh
-│   └── report/                   # HTML, JSON, Markdown, SARIF, bulk summary
-├── dashboard/
-│   ├── app.py                    # Flask + htmx web UI
-│   ├── auth.py                   # JWT authentication
-│   └── templates/                # Dashboard, scan, OSINT, settings pages
-└── models/                       # Pydantic models for all data structures
+│   ├── recon/                  # 10 recon modules + 7 OSINT APIs
+│   └── analysis/               # nuclei, ports, tech, headers, ssl, ffuf,
+│                               # dalfox, sqlmap, gf_patterns, interactsh
+├── dashboard/                  # Flask + htmx web UI + JWT auth
+└── models/                     # Pydantic models for all data
 ```
 
 ---
