@@ -73,6 +73,10 @@ class ToolsConfig(BaseModel):
     dnsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/dnsx"))
     tlsx: ToolEntry = ToolEntry(path=Path("/usr/local/bin/tlsx"))
     gowitness: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gowitness"))
+    dalfox: ToolEntry = ToolEntry(path=Path("/usr/local/bin/dalfox"))
+    sqlmap: ToolEntry = ToolEntry(path=Path("/usr/bin/sqlmap"))
+    interactsh: ToolEntry = ToolEntry(path=Path("/usr/local/bin/interactsh-client"))
+    gf: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gf"))
 
 
 class ApiKeysConfig(BaseModel):

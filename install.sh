@@ -261,6 +261,22 @@ install_security_tools() {
         "sensepost/gowitness" \
         "https://github.com/sensepost/gowitness/releases/download/{VERSION}/gowitness-{VER}-{OS}-{ARCH}"
 
+    install_binary "dalfox" \
+        "hahwul/dalfox" \
+        "https://github.com/hahwul/dalfox/releases/download/{VERSION}/dalfox_{VER}_{OS}_{ARCH}.tar.gz"
+
+    install_binary "interactsh-client" \
+        "projectdiscovery/interactsh" \
+        "https://github.com/projectdiscovery/interactsh/releases/download/{VERSION}/interactsh-client_{VER}_{OS}_{ARCH}.zip"
+
+    # SQLMap is Python-based, install via pip if not present
+    if ! command -v sqlmap &>/dev/null; then
+        run_with_spinner "Installing sqlmap" sudo apt install -y sqlmap || \
+            run_with_spinner "Installing sqlmap (pip)" pip3 install sqlmap || true
+    else
+        ok "sqlmap already installed ($(command -v sqlmap))"
+    fi
+
     # Set naabu raw socket capability
     if [[ -x "$BIN_DIR/naabu" ]]; then
         sudo setcap cap_net_raw=ep "$BIN_DIR/naabu" 2>/dev/null && \

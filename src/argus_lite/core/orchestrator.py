@@ -26,7 +26,7 @@ PRESETS: dict[str, dict[str, list[str]]] = {
     },
     "full": {
         "recon": ["dns", "whois", "subdomains", "certificates", "httpx", "katana", "gau", "dnsx", "tlsx", "screenshots"],
-        "analysis": ["ports", "techstack", "headers", "ssl", "nuclei", "ffuf"],
+        "analysis": ["ports", "techstack", "headers", "ssl", "nuclei", "ffuf", "dalfox", "sqlmap"],
     },
     "recon": {
         "recon": ["dns", "whois", "subdomains", "certificates", "dnsx", "tlsx", "gau"],
@@ -34,7 +34,7 @@ PRESETS: dict[str, dict[str, list[str]]] = {
     },
     "web": {
         "recon": ["dns", "certificates", "httpx", "katana", "screenshots"],
-        "analysis": ["headers", "ssl", "techstack", "nuclei"],
+        "analysis": ["headers", "ssl", "techstack", "nuclei", "dalfox"],
     },
     "bulk": {
         "recon": ["dns", "httpx"],
@@ -84,7 +84,7 @@ class ScanOrchestrator:
             "gau": "gau", "dnsx": "dnsx", "tlsx": "tlsx",
             "ports": "naabu", "techstack": "whatweb", "headers": "headers",
             "ssl": "ssl_check", "nuclei": "nuclei", "ffuf": "ffuf",
-            "screenshots": "gowitness",
+            "screenshots": "gowitness", "dalfox": "dalfox", "sqlmap": "sqlmap",
         }
         for stage_tools in preset_def.values():
             for subtask in stage_tools:
@@ -485,6 +485,9 @@ class ScanOrchestrator:
         if group_b:
             await run_parallel(group_b)
 
+        # Group C: Active testing — XSS (Dalfox) + SQLi (SQLMap) using crawled URLs
+        await self._run_active_testing()
+
         # Convert nuclei findings + risky ports + CVEs into Finding objects
         self._collect_findings_from_analysis()
 
@@ -553,6 +556,92 @@ class ScanOrchestrator:
                 self._findings.append(f)
                 if self._on_finding:
                     self._on_finding(f)
+
+        # XSS findings (Dalfox) → Finding objects
+        for xf in self._analysis_result.xss_findings:
+            f = Finding(
+                id=f"xss-{xf.param}-{xf.type}",
+                type="xss",
+                severity="LOW",
+                title=f"XSS ({xf.type}) in parameter '{xf.param}'",
+                description=f"Cross-site scripting found at {xf.url}",
+                asset=xf.url or self.target,
+                evidence=f"Payload: {xf.payload[:100]}",
+                source="dalfox",
+                remediation="Sanitize user input and implement Content-Security-Policy",
+            )
+            self._findings.append(f)
+            if self._on_finding:
+                self._on_finding(f)
+
+        # SQLi findings (SQLMap) → Finding objects
+        for sf in self._analysis_result.sqli_findings:
+            f = Finding(
+                id=f"sqli-{sf.param}-{sf.type}",
+                type="sqli",
+                severity="LOW",
+                title=f"SQL Injection ({sf.type}) in '{sf.param}'",
+                description=f"SQL injection via {sf.type} on {sf.url}, DBMS: {sf.dbms}",
+                asset=sf.url or self.target,
+                evidence=f"Payload: {sf.payload[:100]}",
+                source="sqlmap",
+                remediation="Use parameterized queries / prepared statements",
+            )
+            self._findings.append(f)
+            if self._on_finding:
+                self._on_finding(f)
+
+    async def _run_active_testing(self) -> None:
+        """Group C: Active vulnerability testing — Dalfox (XSS) + SQLMap (SQLi)."""
+        from argus_lite.modules.analysis.dalfox import dalfox_scan
+        from argus_lite.modules.analysis.gf_patterns import filter_urls_by_pattern
+        from argus_lite.modules.analysis.sqlmap_scan import sqlmap_scan
+
+        # Collect all crawled/discovered URLs for parameter testing
+        all_urls = [c.url for c in self._recon_result.crawl_results]
+        all_urls += [h.url for h in self._recon_result.historical_urls]
+        all_urls += [f.url for f in self._analysis_result.fuzz_results if f.status_code < 400]
+        all_urls = list(set(all_urls))  # deduplicate
+
+        if not all_urls:
+            all_urls = [f"https://{self.target}"]
+
+        group_c = []
+
+        # Dalfox XSS scan — filter URLs with XSS-likely params
+        if self._is_enabled("dalfox"):
+            async def do_dalfox():
+                cfg = self.config.tools.dalfox
+                if not cfg.enabled:
+                    return
+                runner = self._make_runner("dalfox", str(cfg.path))
+                xss_urls = filter_urls_by_pattern(all_urls, "xss")
+                if not xss_urls:
+                    xss_urls = all_urls[:5]  # fallback: test top 5 URLs
+                self._analysis_result.xss_findings = await dalfox_scan(
+                    self.target, runner=runner, urls=xss_urls,
+                )
+                self._tools_used.append("dalfox")
+            group_c.append(self._run_subtask("dalfox", do_dalfox()))
+
+        # SQLMap SQLi scan — filter URLs with SQLi-likely params
+        if self._is_enabled("sqlmap"):
+            async def do_sqlmap():
+                cfg = self.config.tools.sqlmap
+                if not cfg.enabled:
+                    return
+                runner = self._make_runner("sqlmap", str(cfg.path))
+                sqli_urls = filter_urls_by_pattern(all_urls, "sqli")
+                if sqli_urls:
+                    # Scan only the first candidate to avoid excessive testing
+                    self._analysis_result.sqli_findings = await sqlmap_scan(
+                        sqli_urls[0], runner=runner,
+                    )
+                    self._tools_used.append("sqlmap")
+            group_c.append(self._run_subtask("sqlmap", do_sqlmap()))
+
+        if group_c:
+            await run_parallel(group_c)
 
     async def _run_cve_enrichment(self) -> None:
         """Query NVD API for CVEs matching detected technologies."""

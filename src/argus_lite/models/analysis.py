@@ -60,6 +60,35 @@ class FfufResult(BaseModel):
     redirect_location: str = ""
 
 
+class DalfoxFinding(BaseModel):
+    """XSS finding from Dalfox scanner."""
+
+    url: str = ""
+    param: str = ""
+    payload: str = ""
+    type: str = ""              # reflected, stored, dom
+    evidence: str = ""
+
+
+class SqlmapFinding(BaseModel):
+    """SQL injection finding from SQLMap."""
+
+    url: str = ""
+    param: str = ""
+    type: str = ""              # boolean-based, time-based, UNION, error-based
+    dbms: str = ""              # MySQL, PostgreSQL, MSSQL, etc.
+    payload: str = ""
+
+
+class InteractshEvent(BaseModel):
+    """Out-of-band interaction captured by Interactsh."""
+
+    protocol: str = ""          # dns, http, smtp, ldap
+    remote_address: str = ""
+    raw_request: str = ""
+    timestamp: str = ""
+
+
 class AnalysisResult(BaseModel):
     """Aggregated result from analysis module."""
 
@@ -69,3 +98,6 @@ class AnalysisResult(BaseModel):
     security_headers: SecurityHeadersResult | None = None
     nuclei_findings: list[NucleiFinding] = []
     fuzz_results: list[FfufResult] = []
+    xss_findings: list[DalfoxFinding] = []
+    sqli_findings: list[SqlmapFinding] = []
+    oast_events: list[InteractshEvent] = []
