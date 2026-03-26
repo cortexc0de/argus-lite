@@ -174,36 +174,91 @@ class PentestAgent:
         self._history: list[dict] = []
         self._memory: dict[str, Any] = {}
 
-    async def run(self, target: str, app_config: AppConfig) -> AgentResult:
-        """Full autonomous agent run with closed execution loop."""
+    async def run(
+        self,
+        target: str,
+        app_config: AppConfig,
+        mission: str = "full_assessment",
+        stealth: bool = False,
+    ) -> AgentResult:
+        """Full autonomous agent run — ALL modules wired.
+
+        Phase 1: Recon + Environment detection
+        Phase 2: Goal hierarchy + Knowledge base + Target scoring
+        Phase 3: Execute loop (decide → execute → feedback → meta-learn → adapt)
+        Phase 4: Save memory + knowledge + meta stats
+        """
+        from argus_lite.core.attack_graph import AttackGraph
+        from argus_lite.core.environment import EnvironmentDetector, StealthConfig
+        from argus_lite.core.goal_engine import GoalHierarchy, create_goal_hierarchy
+        from argus_lite.core.knowledge_base import KnowledgeBase
+        from argus_lite.core.meta_learning import MetaLearner, SkillOutcome
+        from argus_lite.core.orchestrator import ScanOrchestrator
+        from argus_lite.core.risk_scorer import score_scan
         from argus_lite.core.skills import build_skill_registry
+        from argus_lite.core.target_scorer import TargetScorer
 
         registry = self._skill_registry or build_skill_registry(app_config)
         memory = AgentMemory()
         memory.load()
+        knowledge = KnowledgeBase()
+        knowledge.load()
+        meta = MetaLearner()
+        meta.load()
+        attack_graph = AttackGraph()
+
+        stealth_config = StealthConfig(enabled=stealth) if stealth else None
 
         context = AgentContext(
             target=target,
             skill_registry=registry,
             memory=memory,
+            environment=None,
+            stealth=stealth_config,
         )
 
-        # Phase 1: Quick recon
-        from argus_lite.core.orchestrator import ScanOrchestrator
-        from argus_lite.core.risk_scorer import score_scan
-
+        # ── Phase 1: Recon + Environment Detection ──
         orch = ScanOrchestrator(target=target, config=app_config, preset="quick", skip_cve=True)
         context.scan_result = await orch.run()
         context.scan_result.risk_summary = score_scan(context.scan_result)
 
-        # Phase 2: LLM creates attack plan
+        # Environment detection (WAF, CDN, anti-bot)
+        try:
+            env_detector = EnvironmentDetector()
+            context.environment = await env_detector.detect(target)
+        except Exception:
+            pass
+
+        # ── Phase 2: Intelligence Layer ──
+
+        # Goal hierarchy (mission-driven)
+        goal_hierarchy = await create_goal_hierarchy(self._config, context, mission=mission)
+
+        # Knowledge base — find applicable exploit patterns
+        tech_names = [t.name for t in context.scan_result.analysis.technologies]
+        kb_context = knowledge.to_llm_context(tech_names)
+
+        # Target scoring — prioritize endpoints
+        all_urls = [c.url for c in context.scan_result.recon.crawl_results]
+        all_urls += [h.url for h in context.scan_result.recon.historical_urls]
+        scored_targets = TargetScorer.score_endpoints(all_urls) if all_urls else []
+
+        # Meta-learning — get skill priorities for this tech
+        meta_context = meta.to_llm_context(tech_names)
+
+        # Attack plan
         planner = AgentPlanner(self._config)
         context.plan = await planner.create_plan(context)
 
-        # Phase 3: Execute loop — decide → execute → feedback → adapt
+        # ── Phase 3: Execute Loop ──
         skills_used: list[str] = []
 
         for step_num in range(self._max_steps):
+            # Stealth delay
+            if stealth_config and stealth_config.enabled:
+                import asyncio
+                await asyncio.sleep(stealth_config.delay_ms / 1000)
+
             decision = await self._decide(context)
             action = decision.get("action", "done")
             thought = decision.get("thought", "")
@@ -244,6 +299,32 @@ class PentestAgent:
             # Update context with results
             context.update_from_result(action, skill_result)
 
+            # Build attack graph from new findings
+            for f in skill_result.findings:
+                attack_graph.add_finding(f)
+
+            # Update attack graph probabilities
+            if skill_result.success:
+                chains = attack_graph.get_exploitable_chains(threshold=0.2)
+                # Include chain context in future decisions
+                if chains:
+                    context.attack_chains_context = attack_graph.to_llm_context()
+
+            # Meta-learning: record outcome
+            primary_tech = tech_names[0] if tech_names else "unknown"
+            meta.record(SkillOutcome(
+                skill=action,
+                tech=primary_tech,
+                success=skill_result.success,
+                findings_count=len(skill_result.findings),
+            ))
+
+            # Knowledge base: record successful exploits
+            if skill_result.success and skill_result.findings:
+                for f in skill_result.findings:
+                    memory.record_success(target, f.evidence, f.type, f.asset)
+                    knowledge.record_outcome(f.type, skill_result.success)
+
             # Update plan tracking
             if context.plan:
                 if skill_result.success:
@@ -251,22 +332,23 @@ class PentestAgent:
                 else:
                     context.plan = await planner.adapt_plan(context, action)
 
-            # Record successes to memory
-            if skill_result.success and skill_result.findings:
-                for f in skill_result.findings:
-                    memory.record_success(target, f.evidence, f.type, f.asset)
+            # Goal tracking
+            current_goal = goal_hierarchy.get_next_goal()
+            if current_goal and action in current_goal.assigned_skills:
+                if skill_result.success:
+                    goal_hierarchy.mark_achieved(current_goal.id, skill_result.summary)
+                else:
+                    goal_hierarchy.mark_failed(current_goal.id)
 
-        # Save memory
+        # ── Phase 4: Save all state ──
         memory.record_target_pattern(
-            target,
-            [t.name for t in context.scan_result.analysis.technologies],
+            target, tech_names,
             [p.port for p in context.scan_result.analysis.open_ports],
         )
-        memory.record_findings(
-            target,
-            [f.title for f in context.scan_result.findings],
-        )
+        memory.record_findings(target, [f.title for f in context.scan_result.findings])
         memory.save()
+        knowledge.save()
+        meta.save()
 
         return AgentResult(
             target=target,

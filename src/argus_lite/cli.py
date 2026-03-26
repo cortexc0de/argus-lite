@@ -667,7 +667,7 @@ def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool, stea
     console.print("[dim]Phase 1: Recon → Phase 2: Plan → Phase 3: Execute skills → Phase 4: Report[/dim]\n")
 
     agent_result = asyncio.get_event_loop().run_until_complete(
-        agent.run(target, config)
+        agent.run(target, config, mission=mission, stealth=stealth)
     )
 
     # Summary

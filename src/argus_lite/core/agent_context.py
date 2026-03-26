@@ -143,6 +143,7 @@ class AgentContext:
         self.target = target
         self.environment = environment  # EnvironmentProfile
         self.stealth = stealth          # StealthConfig
+        self.attack_chains_context: str = ""  # from AttackGraph
         self.scan_result = scan_result or ScanResult(
             scan_id="agent", target=target, target_type="domain",
             status="running", started_at=datetime.now(tz=timezone.utc),
@@ -225,6 +226,10 @@ class AgentContext:
         # Stealth mode
         if self.stealth and self.stealth.enabled:
             lines.append(f"Stealth: ON (delay={self.stealth.delay_ms}ms)")
+
+        # Attack chains (from graph search)
+        if self.attack_chains_context:
+            lines.append(f"\n{self.attack_chains_context}")
 
         # Available skills
         if self.skill_registry:

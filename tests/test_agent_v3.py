@@ -155,11 +155,13 @@ class TestPentestAgentRun:
         config = AIConfig(api_key="test", model="test")
         agent = PentestAgent(config, skill_registry=registry, max_steps=3)
 
-        # Responses: 1=planner create_plan, 2=decide (check_headers), 3=decide (done)
+        # Responses: goal_hierarchy, planner, decide (check_headers), decide (done)
+        # The agent now calls _call_llm for: create_goal_hierarchy, create_plan, then decisions
         responses = [
-            {"goal": "test headers", "steps": ["check_headers"]},
-            {"thought": "checking headers", "action": "check_headers", "input": {}},
-            {"thought": "done", "action": "done", "input": {}, "report": "Complete"},
+            {"root": {"id": "r", "description": "test", "subgoals": []}},  # goal_hierarchy
+            {"goal": "test headers", "steps": ["check_headers"]},           # planner
+            {"thought": "checking headers", "action": "check_headers", "input": {}},  # decide
+            {"thought": "done", "action": "done", "input": {}, "report": "Complete"},  # done
         ]
         call_idx = [0]
 
@@ -175,8 +177,13 @@ class TestPentestAgentRun:
 
         MockSkill.execute_count = 0
 
+        async def mock_env_detect(self, target):
+            from argus_lite.core.environment import EnvironmentProfile
+            return EnvironmentProfile()
+
         with patch("argus_lite.core.agent._call_llm", new_callable=AsyncMock, side_effect=mock_call_llm), \
-             patch("argus_lite.core.orchestrator.ScanOrchestrator.run", mock_orch_run):
+             patch("argus_lite.core.orchestrator.ScanOrchestrator.run", mock_orch_run), \
+             patch("argus_lite.core.environment.EnvironmentDetector.detect", mock_env_detect):
             result = asyncio.get_event_loop().run_until_complete(
                 agent.run("example.com", AppConfig())
             )
