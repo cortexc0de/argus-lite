@@ -583,7 +583,8 @@ def monitor(target: str, interval: str, preset: str, notify: bool, max_runs: int
 @click.argument("target")
 @click.option("--max-steps", type=int, default=8, help="Max agent decision loops")
 @click.option("--preset", default="full", help="Base scan preset")
-def agent_mode(target: str, max_steps: int, preset: str) -> None:
+@click.option("--multi-agent", is_flag=True, default=False, help="Use multi-agent team (recon + vuln + exploit)")
+def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool) -> None:
     """AI-driven autonomous pentesting — LLM decides what to scan.
 
     \b
@@ -608,9 +609,38 @@ def agent_mode(target: str, max_steps: int, preset: str) -> None:
         console.print("[red]Agent mode requires AI API key. Run: argus config ai[/red]")
         raise SystemExit(1)
 
-    console.print(f"[bold #00ff41]AGENT MODE v3[/bold #00ff41] — Autonomous pentesting with skill execution")
+    mode_label = "MULTI-AGENT TEAM" if multi_agent else "AGENT MODE v4"
+    console.print(f"[bold #00ff41]{mode_label}[/bold #00ff41] — Autonomous pentesting")
     console.print(f"Target: [bold]{target}[/bold] | Max steps: {max_steps}")
+    if multi_agent:
+        console.print("[dim]Agents: Recon → Vuln Scanner → Exploit Specialist[/dim]")
     console.print()
+
+    # Multi-agent mode
+    if multi_agent:
+        from argus_lite.core.multi_agent import AgentTeam
+
+        team = AgentTeam(config.ai, config)
+        agent_result = asyncio.get_event_loop().run_until_complete(
+            team.run(target, max_steps_per_agent=max_steps)
+        )
+
+        result = agent_result.scan_result
+        risk = result.risk_summary if result else None
+        rc = {"NONE": "green", "LOW": "blue", "MEDIUM": "yellow", "HIGH": "red"}.get(
+            risk.risk_level if risk else "NONE", "white")
+
+        for step in agent_result.steps:
+            status = "[green]OK[/green]" if step.result_success else "[red]FAIL[/red]"
+            if step.action == "done":
+                console.print(f"  [dim]{step.thought}[/dim]")
+            else:
+                console.print(f"  {step.action} {status} — {step.result_summary[:60]}")
+
+        console.print(f"\n[bold]Team complete[/bold]")
+        console.print(f"  Steps: {len(agent_result.steps)} | Skills: {', '.join(agent_result.skills_used) or 'none'}")
+        console.print(f"  Findings: {agent_result.total_findings} | Risk: [{rc}]{risk.risk_level if risk else 'NONE'}[/{rc}]")
+        return
 
     from argus_lite.core.agent_context import AgentStep
 

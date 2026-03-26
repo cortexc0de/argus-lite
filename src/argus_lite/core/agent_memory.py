@@ -90,4 +90,59 @@ class AgentMemory:
         if past:
             parts.append(f"Past findings: {', '.join(past[-5:])}")
 
+        # Cross-target: find similar targets
+        similar = self.find_similar_targets(
+            patterns.get("tech_stack", []),
+            patterns.get("ports", []),
+        )
+        if similar:
+            parts.append(f"Similar targets: {', '.join(s['target'] for s in similar[:3])}")
+
         return " | ".join(parts) if parts else ""
+
+    # ── Smart retrieval (v4) ──
+
+    def find_similar_targets(self, tech_stack: list[str], ports: list[int]) -> list[dict]:
+        """Find past targets with similar tech/ports using Jaccard similarity."""
+        if not tech_stack and not ports:
+            return []
+
+        query_set = set(t.lower() for t in tech_stack) | set(str(p) for p in ports)
+        scored: list[tuple[float, str]] = []
+
+        for target, patterns in self.target_patterns.items():
+            target_set = set(t.lower() for t in patterns.get("tech_stack", []))
+            target_set |= set(str(p) for p in patterns.get("ports", []))
+            if not target_set:
+                continue
+            # Jaccard similarity
+            intersection = len(query_set & target_set)
+            union = len(query_set | target_set)
+            similarity = intersection / union if union > 0 else 0
+            if similarity > 0.2:
+                scored.append((similarity, target))
+
+        scored.sort(reverse=True)
+        return [{"target": t, "similarity": round(s, 2)} for s, t in scored[:5]]
+
+    def find_similar_payloads(self, vuln_type: str, tech: str = "") -> list[dict]:
+        """Find payloads that worked on similar vuln_type + tech combos."""
+        results = []
+        for target, payloads in self.successful_payloads.items():
+            target_tech = self.target_patterns.get(target, {}).get("tech_stack", [])
+            for p in payloads:
+                if p.get("vuln_type", "").lower() == vuln_type.lower():
+                    # Bonus if tech matches
+                    tech_match = tech.lower() in [t.lower() for t in target_tech] if tech else False
+                    results.append({**p, "target": target, "tech_match": tech_match})
+        # Sort: tech matches first
+        results.sort(key=lambda r: r.get("tech_match", False), reverse=True)
+        return results[:5]
+
+    def get_success_rate(self, skill_name: str) -> float:
+        """Rough success rate: how many targets had findings after this skill."""
+        total = len(self.past_findings)
+        if total == 0:
+            return 0.0
+        with_findings = sum(1 for findings in self.past_findings.values() if findings)
+        return with_findings / total
