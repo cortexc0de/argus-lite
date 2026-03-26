@@ -12,8 +12,8 @@
     <a href="#web-dashboard">Dashboard</a>
   </p>
   <p align="center">
-    <img src="https://img.shields.io/badge/version-4.0.0-00ff41?style=flat-square" alt="Version">
-    <img src="https://img.shields.io/badge/tests-675_passed-brightgreen?style=flat-square" alt="Tests">
+    <img src="https://img.shields.io/badge/version-5.0.0-00ff41?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/tests-701_passed-brightgreen?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/tools-15-orange?style=flat-square" alt="Tools">
     <img src="https://img.shields.io/badge/skills-11-ff6b6b?style=flat-square" alt="Skills">
     <img src="https://img.shields.io/badge/OSINT_APIs-7-blue?style=flat-square" alt="OSINT">
@@ -130,6 +130,37 @@ Each attempt feeds back to LLM for WAF bypass techniques.
 - Reuses payloads that worked on similar tech+vuln combos
 - Cross-target learning: "WordPress 6.x → this XSS worked before"
 
+**6. Graph Search** (v5) — multi-hop exploit chain pathfinding:
+```
+XSS in /search ──→ Session Hijack (pivot) ──→ Admin Access
+  p=0.6                                  p=0.7
+  cumulative: 0.42
+```
+BFS finds all chains, ranked by cumulative probability. Bayesian updates: success boosts edge probability, failure decreases it.
+
+**7. Environment Detection** (v5) — fingerprints WAF before attacking:
+```
+WAF: Cloudflare (cf-ray header detected)
+CDN: Cloudflare
+Server: nginx/1.24
+Anti-bot: not detected
+→ Agent adjusts: use encoding bypass, slower probing
+```
+Detects: Cloudflare, ModSecurity, Imperva, Akamai, Sucuri, AWS WAF, F5.
+
+**8. Pattern Learning** (v5) — generalizes from past experience:
+```
+Pattern: WordPress → XSS (confidence=0.6, 3 past successes)
+Pattern: Laravel → SQLi (confidence=0.4, 2 past successes)
+→ Agent tries XSS first on WordPress targets
+```
+
+**9. Stealth Mode** (v5):
+```bash
+argus agent example.com --stealth
+```
+Slow probing (2s delay), randomized User-Agent/headers, WAF evasion. Agent sees "Stealth: ON" and uses conservative strategy.
+
 ---
 
 ## Multi-Agent Mode
@@ -194,6 +225,7 @@ docker run -v ./reports:/reports ghcr.io/cortexc0de/argus-lite scan example.com 
 ```bash
 argus agent TARGET                   # autonomous single agent (plan tree + attack graph)
 argus agent TARGET --multi-agent     # 3-agent team
+argus agent TARGET --stealth         # slow probing, WAF evasion
 argus agent TARGET --max-steps 15    # more iterations
 ```
 
@@ -311,7 +343,8 @@ Or configure via `argus config ai` or web Settings.
 
 | Version | Highlights |
 |---|---|
-| **v4.0.0** | **Plan Trees** (branching), **Attack Graphs** (chains), **Adaptive Payloads** (WAF bypass loop), **Target Scoring**, **Multi-Agent** (3 specialized agents), Smart Memory (Jaccard similarity) |
+| **v5.0.0** | **Graph Search** (BFS multi-hop chains), **Environment Detection** (WAF/CDN fingerprinting), **Pattern Learning** (tech→vuln generalization), **Stealth Mode** (delay+headers), **Bayesian probability updates** |
+| v4.0.0 | Plan Trees (branching), Attack Graphs (chains), Adaptive Payloads (WAF bypass loop), Target Scoring, Multi-Agent (3 agents), Smart Memory |
 | v3.0.0 | Closed execution loop — skills actually run, not just printed; AgentPlanner, SkillRegistry, AgentMemory |
 | v2.0.0 | Agent mode (reactive), elite tools (Dalfox/SQLMap/Interactsh), JWT auth, threat intel |
 | v1.8.0 | Web dashboard v2 (Flask + htmx, REST API, charts) |
@@ -333,7 +366,8 @@ src/argus_lite/
 │   ├── agent.py                # PentestAgent (plan tree, attack graph, closed loop)
 │   ├── agent_context.py        # PlanTree, PlanNode, AgentContext, AgentResult
 │   ├── agent_memory.py         # SmartMemory (Jaccard similarity, cross-target learning)
-│   ├── attack_graph.py         # AttackGraph (nodes, edges, exploit chains)
+│   ├── attack_graph.py         # AttackGraph + BFS search + Bayesian updates
+│   ├── environment.py          # WAF/CDN detection, StealthConfig, header randomization
 │   ├── payload_engine.py       # PayloadEngine (try → analyze → refine → retry)
 │   ├── target_scorer.py        # TargetScorer (critical/high/medium/low/skip)
 │   ├── multi_agent.py          # AgentTeam (Recon + Vuln Scanner + Exploit)
