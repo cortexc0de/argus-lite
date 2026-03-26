@@ -579,6 +579,96 @@ def monitor(target: str, interval: str, preset: str, notify: bool, max_runs: int
     console.print(f"[dim]Total runs: {len(session._state.runs)}[/dim]")
 
 
+@main.command("agent")
+@click.argument("target")
+@click.option("--max-steps", type=int, default=8, help="Max agent decision loops")
+@click.option("--preset", default="full", help="Base scan preset")
+def agent_mode(target: str, max_steps: int, preset: str) -> None:
+    """AI-driven autonomous pentesting — LLM decides what to scan.
+
+    \b
+    The agent uses your AI provider to:
+    1. Analyze recon results and build attack hypotheses
+    2. Classify endpoints by vulnerability potential
+    3. Generate context-specific payloads
+    4. Decide which tools to run at each step
+
+    Example: argus agent example.com
+    """
+    import asyncio
+
+    from argus_lite.core.agent import PentestAgent
+    from argus_lite.core.orchestrator import ScanOrchestrator
+    from argus_lite.core.risk_scorer import score_scan
+
+    console.print(f"[yellow]{LEGAL_NOTICE}[/yellow]")
+
+    config = _get_config()
+    if not config.ai.api_key:
+        console.print("[red]Agent mode requires AI API key. Run: argus config ai[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold #00ff41]AGENT MODE[/bold #00ff41] — AI-driven autonomous pentest")
+    console.print(f"Target: [bold]{target}[/bold] | Max steps: {max_steps}")
+    console.print()
+
+    agent = PentestAgent(config.ai, max_steps=max_steps)
+
+    console.print("[cyan]Phase 1:[/cyan] Collecting intelligence...")
+
+    def on_progress(stage: str, status: str) -> None:
+        icons = {"start": "⟳", "done": "✓", "fail": "✗", "skip": "—"}
+        console.print(f"  {icons.get(status, '?')} {stage}")
+
+    orch = ScanOrchestrator(target=target, config=config, preset=preset, on_progress=on_progress)
+    result = asyncio.get_event_loop().run_until_complete(orch.run())
+    result.risk_summary = score_scan(result)
+
+    console.print(f"\n[cyan]Phase 2:[/cyan] AI classifying endpoints...")
+
+    all_urls = [c.url for c in result.recon.crawl_results]
+    all_urls += [h.url for h in result.recon.historical_urls]
+    tech_names = [t.name for t in result.analysis.technologies]
+
+    if all_urls:
+        classification = asyncio.get_event_loop().run_until_complete(
+            agent.classify_endpoints(all_urls[:30], tech_names)
+        )
+        if "endpoints" in classification:
+            console.print(f"\n[bold]Endpoint Analysis:[/bold]")
+            for ep in classification.get("endpoints", [])[:10]:
+                pc = {"high": "red", "medium": "yellow", "low": "dim"}.get(ep.get("priority", ""), "white")
+                console.print(
+                    f"  [{pc}]{ep.get('priority', '?').upper()}[/{pc}] "
+                    f"{ep.get('url', '?')} → {', '.join(ep.get('vulns_to_test', []))}"
+                )
+        if "attack_strategy" in classification:
+            console.print(f"\n[bold cyan]Strategy:[/bold cyan] {classification['attack_strategy']}")
+
+    console.print(f"\n[cyan]Phase 3:[/cyan] Agent loop ({max_steps} steps max)...")
+
+    for step in range(max_steps):
+        decision = asyncio.get_event_loop().run_until_complete(agent.decide_next_action(result))
+        action = decision.get("action", "done")
+        thought = decision.get("thought", "")
+
+        console.print(f"\n  [bold]Step {step + 1}:[/bold] {thought}")
+        console.print(f"  [cyan]→[/cyan] {action}")
+
+        if action == "done":
+            if "report" in decision:
+                console.print(f"\n[bold green]Agent Summary:[/bold green]\n  {decision['report']}")
+            break
+
+        agent.record_step(decision, f"completed step {step + 1}")
+
+    risk = result.risk_summary
+    rc = {"NONE": "green", "LOW": "blue", "MEDIUM": "yellow", "HIGH": "red"}.get(
+        risk.risk_level if risk else "NONE", "white")
+    console.print(f"\n[bold]Agent complete[/bold]")
+    console.print(f"  Risk: [{rc}]{risk.risk_level if risk else 'NONE'}[/{rc}] | Findings: {len(result.findings)}")
+
+
 @main.command("discover")
 @click.option("--cve", default=None, help="Find hosts vulnerable to CVE (e.g. CVE-2024-1234)")
 @click.option("--tech", default=None, help="Find hosts running technology (e.g. 'WordPress 6.3')")
