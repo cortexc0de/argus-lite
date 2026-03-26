@@ -585,7 +585,9 @@ def monitor(target: str, interval: str, preset: str, notify: bool, max_runs: int
 @click.option("--preset", default="full", help="Base scan preset")
 @click.option("--multi-agent", is_flag=True, default=False, help="Use multi-agent team (recon + vuln + exploit)")
 @click.option("--stealth", is_flag=True, default=False, help="Stealth mode: slow probing, header randomization, WAF evasion")
-def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool, stealth: bool) -> None:
+@click.option("--mission", default="full_assessment", type=click.Choice(["full_assessment", "data_exfiltration", "admin_access", "rce"]),
+              help="Mission type: what the agent is trying to achieve")
+def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool, stealth: bool, mission: str) -> None:
     """AI-driven autonomous pentesting — LLM decides what to scan.
 
     \b
