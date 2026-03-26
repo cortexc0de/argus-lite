@@ -608,65 +608,48 @@ def agent_mode(target: str, max_steps: int, preset: str) -> None:
         console.print("[red]Agent mode requires AI API key. Run: argus config ai[/red]")
         raise SystemExit(1)
 
-    console.print(f"[bold #00ff41]AGENT MODE[/bold #00ff41] — AI-driven autonomous pentest")
+    console.print(f"[bold #00ff41]AGENT MODE v3[/bold #00ff41] — Autonomous pentesting with skill execution")
     console.print(f"Target: [bold]{target}[/bold] | Max steps: {max_steps}")
     console.print()
 
-    agent = PentestAgent(config.ai, max_steps=max_steps)
+    from argus_lite.core.agent_context import AgentStep
 
-    console.print("[cyan]Phase 1:[/cyan] Collecting intelligence...")
+    def on_step(step: AgentStep) -> None:
+        status = "[green]OK[/green]" if step.result_success else "[red]FAIL[/red]"
+        if step.action == "done":
+            console.print(f"\n  [bold green]Done:[/bold green] {step.thought}")
+            console.print(f"  {step.result_summary}")
+        else:
+            console.print(
+                f"\n  [bold]Step {step.step_number}:[/bold] {step.thought}"
+                f"\n  [cyan]→[/cyan] {step.action} {status}"
+                f"\n  [dim]{step.result_summary}[/dim]"
+            )
+            if step.findings_count:
+                console.print(f"  [yellow]+{step.findings_count} findings[/yellow]")
 
-    def on_progress(stage: str, status: str) -> None:
-        icons = {"start": "⟳", "done": "✓", "fail": "✗", "skip": "—"}
-        console.print(f"  {icons.get(status, '?')} {stage}")
+    agent = PentestAgent(config.ai, max_steps=max_steps, on_step=on_step)
 
-    orch = ScanOrchestrator(target=target, config=config, preset=preset, on_progress=on_progress)
-    result = asyncio.get_event_loop().run_until_complete(orch.run())
-    result.risk_summary = score_scan(result)
+    console.print("[cyan]Running autonomous agent...[/cyan]")
+    console.print("[dim]Phase 1: Recon → Phase 2: Plan → Phase 3: Execute skills → Phase 4: Report[/dim]\n")
 
-    console.print(f"\n[cyan]Phase 2:[/cyan] AI classifying endpoints...")
+    agent_result = asyncio.get_event_loop().run_until_complete(
+        agent.run(target, config)
+    )
 
-    all_urls = [c.url for c in result.recon.crawl_results]
-    all_urls += [h.url for h in result.recon.historical_urls]
-    tech_names = [t.name for t in result.analysis.technologies]
-
-    if all_urls:
-        classification = asyncio.get_event_loop().run_until_complete(
-            agent.classify_endpoints(all_urls[:30], tech_names)
-        )
-        if "endpoints" in classification:
-            console.print(f"\n[bold]Endpoint Analysis:[/bold]")
-            for ep in classification.get("endpoints", [])[:10]:
-                pc = {"high": "red", "medium": "yellow", "low": "dim"}.get(ep.get("priority", ""), "white")
-                console.print(
-                    f"  [{pc}]{ep.get('priority', '?').upper()}[/{pc}] "
-                    f"{ep.get('url', '?')} → {', '.join(ep.get('vulns_to_test', []))}"
-                )
-        if "attack_strategy" in classification:
-            console.print(f"\n[bold cyan]Strategy:[/bold cyan] {classification['attack_strategy']}")
-
-    console.print(f"\n[cyan]Phase 3:[/cyan] Agent loop ({max_steps} steps max)...")
-
-    for step in range(max_steps):
-        decision = asyncio.get_event_loop().run_until_complete(agent.decide_next_action(result))
-        action = decision.get("action", "done")
-        thought = decision.get("thought", "")
-
-        console.print(f"\n  [bold]Step {step + 1}:[/bold] {thought}")
-        console.print(f"  [cyan]→[/cyan] {action}")
-
-        if action == "done":
-            if "report" in decision:
-                console.print(f"\n[bold green]Agent Summary:[/bold green]\n  {decision['report']}")
-            break
-
-        agent.record_step(decision, f"completed step {step + 1}")
-
-    risk = result.risk_summary
+    # Summary
+    result = agent_result.scan_result
+    risk = result.risk_summary if result else None
     rc = {"NONE": "green", "LOW": "blue", "MEDIUM": "yellow", "HIGH": "red"}.get(
         risk.risk_level if risk else "NONE", "white")
-    console.print(f"\n[bold]Agent complete[/bold]")
-    console.print(f"  Risk: [{rc}]{risk.risk_level if risk else 'NONE'}[/{rc}] | Findings: {len(result.findings)}")
+
+    console.print(f"\n[bold]{'═' * 50}[/bold]")
+    console.print(f"[bold]Agent complete[/bold]")
+    if agent_result.plan:
+        console.print(f"  Goal: {agent_result.plan.goal}")
+    console.print(f"  Steps: {len(agent_result.steps)} | Skills: {', '.join(agent_result.skills_used) or 'none'}")
+    console.print(f"  Findings: {agent_result.total_findings}")
+    console.print(f"  Risk: [{rc}]{risk.risk_level if risk else 'NONE'}[/{rc}]")
 
 
 @main.command("discover")

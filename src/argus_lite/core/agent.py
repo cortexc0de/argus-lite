@@ -1,79 +1,84 @@
-"""AI Agent — LLM-driven autonomous pentesting orchestration.
-
-The agent uses LLM as a decision engine:
-1. Analyzer: what is this endpoint? what tech stack?
-2. Strategist: where to attack? what vectors?
-3. Payload Generator: context-specific payloads
-4. Loop Controller: what to do next?
+"""AI Agent v3 — Autonomous pentesting with skill execution, planning, and memory.
 
 Architecture:
-  LLM Agent → Skill Executor → Tools → Results → LLM Agent (loop)
+  LLM plans → Skill executes → Result feeds back → LLM adapts → repeat
+
+The agent loop is CLOSED: decisions are executed, results inform next decisions.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
-from argus_lite.core.config import AIConfig
+from argus_lite.core.agent_context import AgentContext, AgentPlan, AgentResult, AgentStep
+from argus_lite.core.agent_memory import AgentMemory
+from argus_lite.core.config import AIConfig, AppConfig
+from argus_lite.core.skills import SkillRegistry, SkillResult
 from argus_lite.models.scan import ScanResult
 
 logger = logging.getLogger(__name__)
 
-# System prompt that makes LLM an autonomous pentester
-_AGENT_SYSTEM = """You are an autonomous penetration testing agent. You control a security scanner through skills.
+# ── System Prompts ──
 
-Available skills:
-- enumerate_subdomains: Find subdomains for a target domain
-- probe_http: Check which hosts are alive via HTTP
-- crawl_site: Discover all URLs and endpoints on a target
-- scan_nuclei: Run vulnerability templates against targets
-- fuzz_paths: Brute-force directories and files
-- scan_xss: Test for XSS vulnerabilities using Dalfox
-- scan_sqli: Test for SQL injection using SQLMap
-- check_headers: Analyze HTTP security headers
-- detect_tech: Identify technologies (CMS, framework, server)
+_AGENT_SYSTEM = """You are an autonomous penetration testing agent. You control security tools through skills.
 
-Your job:
-1. ANALYZE what you know about the target
-2. DECIDE which skill to run next (or "done" if finished)
-3. EXPLAIN your reasoning
+{available_skills}
+
+Your workflow:
+1. ANALYZE current data (tech stack, ports, URLs, existing findings)
+2. DECIDE which skill to run next based on attack potential
+3. After receiving results, ADAPT your strategy
 
 Respond ONLY with valid JSON:
-{
-  "thought": "Your reasoning about what to do next",
+{{
+  "thought": "Your reasoning — what did you observe? what's the best next move?",
   "action": "skill_name",
-  "input": {"key": "value"},
-  "priority_targets": ["list of interesting endpoints/findings to focus on"]
-}
+  "input": {{"key": "value"}},
+  "priority": "high|medium|low"
+}}
 
-If you are done analyzing, respond:
-{
-  "thought": "Summary of findings",
+When done:
+{{
+  "thought": "Summary of assessment",
   "action": "done",
-  "input": {},
-  "report": "Executive summary of the assessment"
-}
+  "input": {{}},
+  "report": "Executive summary of all findings"
+}}
+
+Strategy rules:
+- High-value targets first: APIs with ID params (IDOR), redirects (SSRF), auth endpoints
+- If tech stack detected (e.g., WordPress, Laravel) → use tech-specific checks
+- If XSS found → check if it chains with CSRF
+- If IDOR found → test privilege escalation
+- If scan result is empty → try different approach
+- Don't repeat skills that already ran
+- test_payload: use for custom HTTP requests with specific payloads
+"""
+
+_PLANNER_SYSTEM = """You are a penetration testing strategist. Given recon data, create an attack plan.
+
+Respond ONLY with valid JSON:
+{{
+  "goal": "What you're trying to achieve (e.g., 'Find data access vulnerabilities in API')",
+  "steps": [
+    "Step 1: description",
+    "Step 2: description"
+  ]
+}}
 
 Rules:
-- Focus on high-impact vulnerabilities first (IDOR, SQLi, XSS, SSRF, RCE)
-- Skip low-value checks if you find something critical
-- Generate context-specific hypotheses based on the tech stack
-- If you see /api/user?id=123, think IDOR
-- If you see redirect?url=, think SSRF/open redirect
-- If you see GraphQL, think introspection/IDOR
-- Be efficient: don't repeat scans
+- Focus on the highest-impact attack vectors based on tech stack
+- Include fallback steps (if step X fails, try Y)
+- Max 8 steps
+- Be specific about which endpoints/params to test
 """
 
 _CLASSIFY_PROMPT = """Analyze these URLs from a security perspective.
-For each URL, identify:
-1. What type of endpoint is it? (auth, payment, search, admin, API, file, redirect)
-2. What parameters could be vulnerable?
-3. What vulnerability types to test? (XSS, SQLi, SSRF, IDOR, LFI, RCE)
-4. Priority: high/medium/low
+For each URL, identify vulnerability potential.
 
 URLs:
 {urls}
@@ -86,216 +91,276 @@ Respond with JSON:
     {{
       "url": "...",
       "type": "auth|payment|search|admin|api|file|redirect",
-      "params_at_risk": ["param1", "param2"],
       "vulns_to_test": ["XSS", "SQLi", "IDOR"],
       "priority": "high|medium|low",
-      "reason": "why this is interesting"
+      "reason": "why"
     }}
   ],
-  "attack_strategy": "overall approach recommendation"
+  "attack_strategy": "overall approach"
 }}
 """
 
-_PAYLOAD_PROMPT = """Generate a targeted payload for this specific scenario:
+_PAYLOAD_PROMPT = """Generate targeted payloads for this scenario:
 
-Target URL: {url}
-Vulnerability type: {vuln_type}
-Technology stack: {tech_stack}
+URL: {url}
+Vulnerability: {vuln_type}
+Tech stack: {tech_stack}
 Parameter: {param}
 Context: {context}
-
-Generate 3 payloads ranked by likelihood of success.
-Consider WAF bypass techniques if applicable.
 
 Respond with JSON:
 {{
   "payloads": [
-    {{
-      "payload": "the actual payload string",
-      "technique": "what technique this uses",
-      "bypass": "what WAF/filter it bypasses",
-      "confidence": "high|medium|low"
-    }}
+    {{"payload": "...", "technique": "...", "confidence": "high|medium|low"}}
   ]
 }}
 """
 
 
-class AgentSkillResult:
-    """Result from executing a skill."""
+class AgentPlanner:
+    """LLM-powered attack planner — creates goal-based plans from recon data."""
 
-    def __init__(self, skill: str, success: bool, data: dict | None = None, error: str = ""):
-        self.skill = skill
-        self.success = success
-        self.data = data or {}
-        self.error = error
+    def __init__(self, config: AIConfig) -> None:
+        self._config = config
+
+    async def create_plan(self, context: AgentContext) -> AgentPlan:
+        """Generate attack plan from current scan data."""
+        prompt = context.build_llm_context()
+        result = await _call_llm(self._config, _PLANNER_SYSTEM, prompt)
+
+        return AgentPlan(
+            goal=result.get("goal", "Assess target security"),
+            steps=result.get("steps", ["scan_nuclei", "check_headers"]),
+        )
+
+    async def adapt_plan(self, context: AgentContext, failed_skill: str) -> AgentPlan:
+        """Adjust plan when a skill fails."""
+        plan = context.plan or AgentPlan()
+        plan.failed.append(failed_skill)
+
+        prompt = (
+            f"The skill '{failed_skill}' failed. "
+            f"Current progress: completed={plan.completed}, failed={plan.failed}. "
+            f"Remaining steps: {[s for s in plan.steps if s not in plan.completed and s not in plan.failed]}. "
+            f"Adapt the plan. What should we do instead?"
+        )
+        result = await _call_llm(self._config, _PLANNER_SYSTEM, prompt)
+
+        return AgentPlan(
+            goal=result.get("goal", plan.goal),
+            steps=result.get("steps", plan.steps),
+            completed=plan.completed,
+            failed=plan.failed,
+        )
 
 
 class PentestAgent:
-    """LLM-driven autonomous pentesting agent.
+    """Autonomous pentesting agent with skill execution, planning, and memory.
 
-    Uses AI to make decisions about what to scan, where to look,
-    and what payloads to generate — all dynamically based on context.
+    The agent loop: plan → decide → EXECUTE → feedback → adapt → repeat
     """
 
-    def __init__(self, config: AIConfig, max_steps: int = 10) -> None:
+    def __init__(
+        self,
+        config: AIConfig,
+        skill_registry: SkillRegistry | None = None,
+        max_steps: int = 15,
+        on_step: Callable[[AgentStep], None] | None = None,
+    ) -> None:
         self._config = config
+        self._skill_registry = skill_registry
         self._max_steps = max_steps
+        self._on_step = on_step
         self._history: list[dict] = []
         self._memory: dict[str, Any] = {}
 
-    async def classify_endpoints(
-        self, urls: list[str], tech_stack: list[str],
-    ) -> dict:
-        """Use LLM to classify endpoints by vulnerability potential.
+    async def run(self, target: str, app_config: AppConfig) -> AgentResult:
+        """Full autonomous agent run with closed execution loop."""
+        from argus_lite.core.skills import build_skill_registry
 
-        Returns structured analysis of which URLs to test and how.
-        """
+        registry = self._skill_registry or build_skill_registry(app_config)
+        memory = AgentMemory()
+        memory.load()
+
+        context = AgentContext(
+            target=target,
+            skill_registry=registry,
+            memory=memory,
+        )
+
+        # Phase 1: Quick recon
+        from argus_lite.core.orchestrator import ScanOrchestrator
+        from argus_lite.core.risk_scorer import score_scan
+
+        orch = ScanOrchestrator(target=target, config=app_config, preset="quick", skip_cve=True)
+        context.scan_result = await orch.run()
+        context.scan_result.risk_summary = score_scan(context.scan_result)
+
+        # Phase 2: LLM creates attack plan
+        planner = AgentPlanner(self._config)
+        context.plan = await planner.create_plan(context)
+
+        # Phase 3: Execute loop — decide → execute → feedback → adapt
+        skills_used: list[str] = []
+
+        for step_num in range(self._max_steps):
+            decision = await self._decide(context)
+            action = decision.get("action", "done")
+            thought = decision.get("thought", "")
+
+            if action == "done":
+                step = AgentStep(
+                    step_number=step_num + 1, thought=thought,
+                    action="done", result_summary=decision.get("report", "Assessment complete"),
+                )
+                context.history.append(step)
+                if self._on_step:
+                    self._on_step(step)
+                break
+
+            # EXECUTE THE SKILL
+            params = decision.get("input", {})
+            if "target" not in params:
+                params["target"] = target
+
+            skill_result = await registry.execute(action, params, context)
+
+            # Record step
+            step = AgentStep(
+                step_number=step_num + 1,
+                thought=thought,
+                action=action,
+                params=params,
+                result_summary=skill_result.summary or skill_result.error,
+                result_success=skill_result.success,
+                findings_count=len(skill_result.findings),
+            )
+            context.history.append(step)
+            skills_used.append(action)
+
+            if self._on_step:
+                self._on_step(step)
+
+            # Update context with results
+            context.update_from_result(action, skill_result)
+
+            # Update plan tracking
+            if context.plan:
+                if skill_result.success:
+                    context.plan.completed.append(action)
+                else:
+                    context.plan = await planner.adapt_plan(context, action)
+
+            # Record successes to memory
+            if skill_result.success and skill_result.findings:
+                for f in skill_result.findings:
+                    memory.record_success(target, f.evidence, f.type, f.asset)
+
+        # Save memory
+        memory.record_target_pattern(
+            target,
+            [t.name for t in context.scan_result.analysis.technologies],
+            [p.port for p in context.scan_result.analysis.open_ports],
+        )
+        memory.record_findings(
+            target,
+            [f.title for f in context.scan_result.findings],
+        )
+        memory.save()
+
+        return AgentResult(
+            target=target,
+            scan_result=context.scan_result,
+            plan=context.plan,
+            steps=context.history,
+            total_findings=len(context.scan_result.findings),
+            skills_used=skills_used,
+        )
+
+    # ── Backward-compatible methods (from v2) ──
+
+    async def classify_endpoints(self, urls: list[str], tech_stack: list[str]) -> dict:
+        """LLM classifies URLs by vulnerability potential."""
         prompt = _CLASSIFY_PROMPT.format(
             urls="\n".join(urls[:50]),
             tech_stack=", ".join(tech_stack) or "unknown",
         )
-        return await self._call_llm(prompt)
+        return await _call_llm(self._config, "Respond ONLY with valid JSON.", prompt)
 
-    async def generate_payloads(
-        self,
-        url: str,
-        vuln_type: str,
-        tech_stack: list[str],
-        param: str = "",
-        context: str = "",
-    ) -> dict:
-        """Use LLM to generate context-specific attack payloads."""
+    async def generate_payloads(self, url: str, vuln_type: str,
+                                tech_stack: list[str], param: str = "",
+                                context: str = "") -> dict:
+        """LLM generates context-specific attack payloads."""
         prompt = _PAYLOAD_PROMPT.format(
-            url=url,
-            vuln_type=vuln_type,
+            url=url, vuln_type=vuln_type,
             tech_stack=", ".join(tech_stack) or "unknown",
-            param=param,
-            context=context,
+            param=param, context=context,
         )
-        return await self._call_llm(prompt)
+        return await _call_llm(self._config, "Respond ONLY with valid JSON.", prompt)
 
     async def decide_next_action(self, scan_result: ScanResult) -> dict:
-        """Given current scan results, decide what to do next."""
-        # Build context from scan results
-        context = self._build_context(scan_result)
-
-        messages = [
-            {"role": "system", "content": _AGENT_SYSTEM},
-        ]
-
-        # Add history of previous decisions
-        for h in self._history[-5:]:
-            messages.append({"role": "assistant", "content": json.dumps(h["decision"])})
-            messages.append({"role": "user", "content": f"Result: {json.dumps(h.get('result_summary', 'ok'))}"})
-
-        messages.append({"role": "user", "content": context})
-
-        return await self._call_llm_messages(messages)
+        """Legacy: decide next action from ScanResult (v2 compat)."""
+        context = AgentContext(target=scan_result.target, scan_result=scan_result)
+        return await self._decide(context)
 
     async def analyze_response(self, url: str, response_data: dict) -> dict:
-        """Analyze an HTTP response for security issues."""
-        prompt = f"""Analyze this HTTP response from a security perspective:
-URL: {url}
-Status: {response_data.get('status_code', '?')}
-Headers: {json.dumps(response_data.get('headers', {}), indent=2)[:500]}
-Body preview: {response_data.get('body', '')[:300]}
-
-What security issues do you see? Any hints of:
-- Information disclosure?
-- Misconfiguration?
-- Potential injection points?
-- Authentication/authorization issues?
-
-Respond with JSON:
-{{"issues": [{{"type": "...", "description": "...", "severity": "high|medium|low"}}], "recommendations": ["..."]}}
-"""
-        return await self._call_llm(prompt)
+        """LLM analyzes HTTP response for security issues."""
+        prompt = f"Analyze HTTP response:\nURL: {url}\nStatus: {response_data.get('status_code')}\nHeaders: {json.dumps(response_data.get('headers', {}))[:400]}\nBody: {response_data.get('body', '')[:200]}"
+        return await _call_llm(self._config, "Respond ONLY with valid JSON.", prompt)
 
     def record_step(self, decision: dict, result_summary: str = "") -> None:
-        """Record a step in the agent's history (memory)."""
-        self._history.append({
-            "decision": decision,
-            "result_summary": result_summary,
-        })
+        """Legacy: record step (v2 compat)."""
+        self._history.append({"decision": decision, "result_summary": result_summary})
 
-    def _build_context(self, scan: ScanResult) -> str:
-        """Build context string from scan results for the LLM."""
-        lines = [f"Target: {scan.target}", f"Status: {scan.status}", ""]
+    # ── Internal ──
 
-        if scan.analysis.technologies:
-            lines.append("Technologies:")
-            for t in scan.analysis.technologies:
-                lines.append(f"  - {t.name} {t.version}")
+    async def _decide(self, context: AgentContext) -> dict:
+        """Ask LLM for next action based on current context."""
+        skills_desc = context.skill_registry.to_llm_description() if context.skill_registry else ""
+        system = _AGENT_SYSTEM.format(available_skills=skills_desc)
+        user_prompt = context.build_llm_context()
+        return await _call_llm(self._config, system, user_prompt)
 
-        if scan.recon.http_probes:
-            lines.append(f"\nLive hosts: {len(scan.recon.http_probes)}")
 
-        if scan.recon.crawl_results:
-            lines.append(f"\nCrawled URLs ({len(scan.recon.crawl_results)}):")
-            for c in scan.recon.crawl_results[:20]:
-                lines.append(f"  - {c.url}")
+# ── Shared LLM call helper ──
 
-        if scan.analysis.open_ports:
-            lines.append(f"\nOpen ports: {', '.join(str(p.port) for p in scan.analysis.open_ports[:10])}")
+async def _call_llm(config: AIConfig, system_prompt: str, user_prompt: str) -> dict:
+    """Call LLM and return parsed JSON response."""
+    if not config.api_key:
+        return {"error": "No AI API key configured"}
 
-        if scan.findings:
-            lines.append(f"\nCurrent findings ({len(scan.findings)}):")
-            for f in scan.findings[:10]:
-                lines.append(f"  [{f.severity}] {f.title}")
+    url = f"{config.base_url.rstrip('/')}/chat/completions"
+    payload = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": config.max_tokens,
+        "temperature": 0.4,
+    }
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json",
+    }
 
-        if scan.analysis.nuclei_findings:
-            lines.append(f"\nNuclei results ({len(scan.analysis.nuclei_findings)}):")
-            for nf in scan.analysis.nuclei_findings[:10]:
-                lines.append(f"  [{nf.severity}] {nf.name}")
+    try:
+        async with httpx.AsyncClient(timeout=config.timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
 
-        lines.append("\nWhat should we do next?")
-        return "\n".join(lines)
+        if resp.status_code != 200:
+            return {"error": f"API returned {resp.status_code}"}
 
-    async def _call_llm(self, prompt: str) -> dict:
-        """Call LLM with a single prompt, return parsed JSON."""
-        messages = [
-            {"role": "system", "content": "You are a security expert. Respond ONLY with valid JSON."},
-            {"role": "user", "content": prompt},
-        ]
-        return await self._call_llm_messages(messages)
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
 
-    async def _call_llm_messages(self, messages: list[dict]) -> dict:
-        """Call LLM with message history, return parsed JSON."""
-        if not self._config.api_key:
-            return {"error": "No AI API key configured"}
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1])
 
-        url = f"{self._config.base_url.rstrip('/')}/chat/completions"
-        payload = {
-            "model": self._config.model,
-            "messages": messages,
-            "max_tokens": self._config.max_tokens,
-            "temperature": 0.4,
-        }
-        headers = {
-            "Authorization": f"Bearer {self._config.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=self._config.timeout) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-
-            if resp.status_code != 200:
-                return {"error": f"API returned {resp.status_code}"}
-
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-
-            # Parse JSON from response
-            text = content.strip()
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:-1])
-
-            return json.loads(text)
-
-        except json.JSONDecodeError:
-            return {"raw_response": content, "error": "Invalid JSON from LLM"}
-        except Exception as exc:
-            return {"error": str(exc)}
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"raw_response": content if "content" in dir() else "", "error": "Invalid JSON"}
+    except Exception as exc:
+        return {"error": str(exc)}
