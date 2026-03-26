@@ -12,8 +12,8 @@
     <a href="#web-dashboard">Dashboard</a>
   </p>
   <p align="center">
-    <img src="https://img.shields.io/badge/version-5.0.0-00ff41?style=flat-square" alt="Version">
-    <img src="https://img.shields.io/badge/tests-701_passed-brightgreen?style=flat-square" alt="Tests">
+    <img src="https://img.shields.io/badge/version-6.0.0-00ff41?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/tests-725_passed-brightgreen?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/tools-15-orange?style=flat-square" alt="Tools">
     <img src="https://img.shields.io/badge/skills-11-ff6b6b?style=flat-square" alt="Skills">
     <img src="https://img.shields.io/badge/OSINT_APIs-7-blue?style=flat-square" alt="OSINT">
@@ -160,6 +160,37 @@ Pattern: Laravel → SQLi (confidence=0.4, 2 past successes)
 argus agent example.com --stealth
 ```
 Slow probing (2s delay), randomized User-Agent/headers, WAF evasion. Agent sees "Stealth: ON" and uses conservative strategy.
+
+**10. Mission-Driven Goals** (v6):
+```bash
+argus agent example.com --mission data_exfiltration
+argus agent example.com --mission admin_access
+argus agent example.com --mission rce
+```
+Goal hierarchy: mission → subgoals → actionable tasks. Agent pursues goals, not just "find vulns."
+```
+Mission: data_exfiltration
+  ○ Bypass authentication (p=0.8)
+    ○ Find IDOR in API (p=0.9)        ← next action
+    ○ Test SQL injection (p=0.7)
+  ○ Find LFI for file access (p=0.5)
+```
+
+**11. Knowledge Base** (v6) — structured exploit knowledge:
+```
+[csrf] WordPress: admin-ajax.php → no nonce → CSRF + XSS chain (conf=0.7)
+[idor] GraphQL: introspection → map types → find ID params (conf=0.8)
+[info] Laravel: debug mode → stack trace → .env leak (conf=0.6)
+[auth] JWT: alg=none bypass → remove signature (conf=0.4)
+```
+6 built-in exploit patterns. Agent matches tech stack → applies relevant knowledge.
+
+**12. Meta-Learning** (v6) — self-optimization:
+```
+scan_sqli on PHP: 80% success (5 runs) → PRIORITIZE
+fuzz_paths on nginx: 10% success (5 runs) → DEPRIORITIZE
+```
+Tracks effectiveness per skill+tech combo. Agent auto-adjusts strategy.
 
 ---
 
@@ -343,7 +374,8 @@ Or configure via `argus config ai` or web Settings.
 
 | Version | Highlights |
 |---|---|
-| **v5.0.0** | **Graph Search** (BFS multi-hop chains), **Environment Detection** (WAF/CDN fingerprinting), **Pattern Learning** (tech→vuln generalization), **Stealth Mode** (delay+headers), **Bayesian probability updates** |
+| **v6.0.0** | **Goal Hierarchy** (mission-driven: data_exfil/admin/RCE), **Knowledge Base** (6 exploit patterns: wp-csrf, graphql, laravel, jwt, ssrf, upload), **Meta-Learning** (self-optimization per skill+tech) |
+| v5.0.0 | Graph Search (BFS multi-hop chains), Environment Detection (WAF/CDN), Pattern Learning, Stealth Mode, Bayesian updates |
 | v4.0.0 | Plan Trees (branching), Attack Graphs (chains), Adaptive Payloads (WAF bypass loop), Target Scoring, Multi-Agent (3 agents), Smart Memory |
 | v3.0.0 | Closed execution loop — skills actually run, not just printed; AgentPlanner, SkillRegistry, AgentMemory |
 | v2.0.0 | Agent mode (reactive), elite tools (Dalfox/SQLMap/Interactsh), JWT auth, threat intel |
@@ -367,7 +399,10 @@ src/argus_lite/
 │   ├── agent_context.py        # PlanTree, PlanNode, AgentContext, AgentResult
 │   ├── agent_memory.py         # SmartMemory (Jaccard similarity, cross-target learning)
 │   ├── attack_graph.py         # AttackGraph + BFS search + Bayesian updates
-│   ├── environment.py          # WAF/CDN detection, StealthConfig, header randomization
+│   ├── goal_engine.py          # GoalHierarchy, mission-driven planning (v6)
+│   ├── knowledge_base.py       # Structured exploit knowledge, 6 builtin patterns (v6)
+│   ├── meta_learning.py        # Self-optimization, skill effectiveness tracking (v6)
+│   ├── environment.py          # WAF/CDN detection, StealthConfig
 │   ├── payload_engine.py       # PayloadEngine (try → analyze → refine → retry)
 │   ├── target_scorer.py        # TargetScorer (critical/high/medium/low/skip)
 │   ├── multi_agent.py          # AgentTeam (Recon + Vuln Scanner + Exploit)
