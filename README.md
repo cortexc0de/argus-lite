@@ -1,304 +1,360 @@
 <p align="center">
   <h1 align="center">ARGUS</h1>
   <p align="center">
-    <strong>AI-powered security scanner for Kali Linux</strong>
+    <strong>AI-driven autonomous security scanner for Kali Linux</strong>
   </p>
   <p align="center">
     <a href="#installation">Installation</a> •
-    <a href="#usage">Usage</a> •
+    <a href="#commands">Commands</a> •
     <a href="#features">Features</a> •
-    <a href="#ai-analysis">AI Analysis</a> •
-    <a href="#dashboard">Dashboard</a>
+    <a href="#ai-agent">AI Agent</a> •
+    <a href="#web-dashboard">Dashboard</a> •
+    <a href="#api">API</a>
   </p>
   <p align="center">
-    <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python">
-    <img src="https://img.shields.io/badge/tests-411_passed-brightgreen" alt="Tests">
-    <img src="https://img.shields.io/badge/coverage-84%25-green" alt="Coverage">
-    <img src="https://img.shields.io/badge/tools-14-orange" alt="Tools">
-    <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+    <img src="https://img.shields.io/badge/version-2.0.0-00ff41?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/tests-622_passed-brightgreen?style=flat-square" alt="Tests">
+    <img src="https://img.shields.io/badge/tools-15-orange?style=flat-square" alt="Tools">
+    <img src="https://img.shields.io/badge/OSINT_APIs-7-blue?style=flat-square" alt="OSINT">
+    <img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   </p>
 </p>
 
 ---
 
-Argus is a local CLI security scanner that automates reconnaissance and analysis for authorized penetration testing. It orchestrates 11 CLI tools + 3 OSINT APIs, uses a **smart pipeline** where tools feed data to each other, and optionally applies **AI analysis** to produce actionable intelligence.
+Argus is an **AI-driven autonomous pentesting framework** that orchestrates 15 security tools + 7 OSINT APIs through an intelligent pipeline. The LLM acts as the brain — classifying endpoints, generating context-specific payloads, and deciding what to scan at each step.
 
-> **Detection only.** Argus does NOT perform exploitation. Nuclei severity is hardcoded to info/low — medium/high/critical findings are silently dropped in code.
+```
+Tools = recon, scanning, exploitation
+LLM   = analysis, strategy, decisions
+```
+
+> **Legal:** For authorized security testing only. Always obtain written permission before scanning.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────┐
+│          LLM Agent (brain)      │  argus agent TARGET
+│  classify → strategize → decide │
+└──────────────┬──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│         Smart Pipeline          │
+│                                 │
+│  Recon ──────────────────────── │
+│  │ OSINT: Shodan, Censys,      │
+│  │   ZoomEye, FOFA, GreyNoise, │
+│  │   VirusTotal, SecurityTrails │
+│  │ Tools: subfinder, dnsx,      │
+│  │   httpx, katana, gau, tlsx  │
+│  ▼                              │
+│  Analysis ──────────────────── │
+│  │ Group A: naabu, whatweb,     │
+│  │   security headers, SSL     │
+│  │ Group B: nuclei, ffuf       │
+│  │ Group C: dalfox (XSS),      │
+│  │   sqlmap (SQLi)             │
+│  ▼                              │
+│  Enrichment ───────────────── │
+│  │ CVE correlation (NVD API)   │
+│  │ Correlation engine          │
+│  │ AI analysis + remediation   │
+│  ▼                              │
+│  Report (HTML/JSON/MD/SARIF)   │
+└─────────────────────────────────┘
+```
+
+---
 
 ## Features
 
-| Category | What it does |
-|----------|-------------|
-| **Passive Recon** | DNS, WHOIS, subdomain discovery, certificate transparency, historical URLs (Wayback Machine) |
-| **Active Analysis** | Port scanning, technology fingerprinting, security headers, SSL/TLS audit, directory fuzzing |
-| **Vulnerability Detection** | Nuclei with 7000+ templates (info/low only), tech-specific template targeting |
-| **OSINT APIs** | Shodan, VirusTotal, SecurityTrails — passive intel without active scanning |
-| **AI Analysis** | LLM-powered executive summary, attack chains, prioritized findings, recommendations |
-| **Smart Pipeline** | Subdomains → httpx → nuclei chain; crawled paths → ffuf seeds; tech → template tags |
-| **Screenshots** | Automated web page screenshots via gowitness |
-| **Reports** | JSON, Markdown, HTML (dark theme), SARIF (CI/CD) |
-| **Dashboard** | Local web UI to browse all scans and reports |
-| **Notifications** | Telegram, Discord, Slack alerts after scan |
-| **Risk Scoring** | Automatic NONE/LOW/MEDIUM/HIGH assessment |
-| **Plugin System** | Drop-in Python plugins in `~/.argus-lite/plugins/` |
+| Category | Details |
+|---|---|
+| **15 Tools** | subfinder, naabu, nuclei, httpx, katana, dnsx, tlsx, whatweb, ffuf, gau, gowitness, dalfox (XSS), sqlmap (SQLi), interactsh (OAST), gf patterns |
+| **7 OSINT APIs** | Shodan, VirusTotal, SecurityTrails, Censys, ZoomEye, FOFA, GreyNoise |
+| **AI Agent** | LLM classifies endpoints, generates payloads, decides scan strategy |
+| **Smart Pipeline** | Tools feed data to each other: subdomains→httpx→nuclei, crawl→ffuf, gf→dalfox |
+| **CVE Correlation** | NVD API v2.0 maps detected technologies to known CVEs |
+| **Correlation Engine** | Cross-references OSINT + ports + CVEs → attack surface score |
+| **Vulnerability Discovery** | `argus discover` — find vulnerable hosts across all OSINT APIs |
+| **Bulk Scanner** | File lists, CIDR, ASN, Shodan/Censys/ZoomEye/FOFA queries |
+| **Continuous Monitoring** | `argus monitor` — scheduled scans with diff notifications |
+| **Web Dashboard** | Flask + htmx: dark theme, charts, scan history, OSINT queries, settings |
+| **5 Report Formats** | HTML (dark theme), JSON, Markdown, SARIF (CI/CD), Bulk summary |
+| **GitHub Actions** | `uses: cortexc0de/argus-lite@v1` — CI security gate with SARIF upload |
+| **Docker** | `docker run ghcr.io/cortexc0de/argus-lite scan TARGET` |
+| **AI Remediation** | Auto-generates Nginx/Apache/iptables configs to fix findings |
+| **Multi-language AI** | English and Russian analysis (`ai.language: ru`) |
+| **JWT Auth** | Dashboard authentication with role-based access |
+| **Threat Intel** | Fetches recent CVEs for your tech stack from NVD |
+| **Plugin System** | ABC plugin interface integrated into orchestrator pipeline |
+| **622 Tests** | Full TDD/SDD coverage, all passing |
 
-### Security by Design
-
-- **Input sanitization** — strict regex, shell metacharacter rejection
-- **Subprocess safety** — never `shell=True`, arguments always as lists
-- **Nuclei severity ceiling** — enforced in code, not just config
-- **Rate limiting** — asyncio Semaphore + token bucket
-- **Audit logging** — JSON log with automatic secret masking
-- **Scope enforcement** — allowlist/denylist, private IP detection
+---
 
 ## Installation
 
-### One-line install (Kali Linux)
+### Kali Linux (recommended)
 
 ```bash
-git clone https://github.com/cortexc0de/argus-lite.git ~/argus-lite
-cd ~/argus-lite && sudo ./install.sh
+git clone https://github.com/cortexc0de/argus-lite.git
+cd argus-lite
+sudo ./install.sh
 ```
 
-The installer automatically:
-- Downloads pre-built binaries (subfinder, naabu, nuclei, httpx, katana, dnsx, tlsx, gau, ffuf, gowitness)
-- Creates Python venv and installs dependencies
-- Sets up `argus` command globally
-- Initializes config at `~/.argus-lite/`
+The installer downloads all 15 security tools, sets up Python venv, and creates the `argus` command.
 
-### Manual install
+### Docker
+
+```bash
+docker run -v ./reports:/reports ghcr.io/cortexc0de/argus-lite scan example.com --no-confirm
+```
+
+### Docker Compose
+
+```bash
+# Scan
+TARGET=example.com docker compose run --rm scan
+
+# Dashboard
+docker compose up dashboard
+# → http://localhost:8443
+```
+
+---
+
+## Commands
+
+### Core
+
+```bash
+argus                                    # Launch web dashboard
+argus scan TARGET --preset full --ai     # Full scan with AI analysis
+argus scan TARGET --preset quick         # Fast scan (DNS + headers + SSL)
+argus scan TARGET --no-cve               # Skip CVE lookup (faster)
+```
+
+### AI Agent (autonomous pentesting)
+
+```bash
+argus agent example.com                  # LLM-driven scan
+argus agent example.com --max-steps 15   # More decision iterations
+```
+
+### Vulnerability Discovery
+
+```bash
+argus discover --cve CVE-2024-1234       # Find vulnerable hosts by CVE
+argus discover --tech "WordPress 6.3"    # Find hosts by technology
+argus discover --port 3389 --country RU  # Open RDP in Russia
+argus discover --service openssh         # Find SSH servers
+```
+
+### Bulk Scanning
+
+```bash
+argus bulk targets.txt                   # From file
+argus bulk 192.168.1.0/24               # From CIDR
+argus bulk AS12345                       # From ASN
+argus bulk --shodan "org:Company"        # From Shodan query
+argus bulk --censys "services.port:443"  # From Censys
+argus bulk --zoomeye "app:nginx"         # From ZoomEye
+argus bulk --fofa 'domain="example.com"' # From FOFA
+```
+
+### Continuous Monitoring
+
+```bash
+argus monitor example.com --interval 24h --notify
+argus monitor target.com --interval 1h --preset web --max-runs 10
+```
+
+### Configuration
+
+```bash
+argus config ai                          # Set up AI provider (interactive)
+argus config show                        # Show current config
+argus dashboard                          # Launch web UI
+argus tools check                        # Verify tool availability
+```
+
+### Scan Templates
+
+```bash
+argus run examples/quick_scan.yaml --target example.com
+TARGET=mysite.com argus run examples/full_scan.yaml
+```
+
+---
+
+## AI Agent
+
+The agent mode (`argus agent`) turns Argus into an **autonomous pentesting system**:
+
+```
+Phase 1: Collect intelligence (full scan)
+Phase 2: AI classifies endpoints
+  HIGH  /api/user?id=123 → IDOR, SQLi
+  HIGH  /redirect?url=   → SSRF, Open Redirect
+  MED   /search?q=test   → XSS
+Phase 3: Agent decision loop
+  Step 1: "API has ID param → testing IDOR"    → scan_sqli
+  Step 2: "Found SQL error → escalating"       → generate_payload
+  Step 3: "Testing WAF bypass payload"         → test_payload
+  Step 4: "All high-priority done"             → done
+```
+
+The LLM serves 4 roles:
+- **Analyzer** — classifies endpoints, identifies tech stack
+- **Strategist** — prioritizes attack vectors
+- **Payload Generator** — context-specific payloads with WAF bypass
+- **Loop Controller** — decides what to scan next
+
+Requires an OpenAI-compatible API:
+```bash
+argus config ai
+# → Base URL: https://api.openai.com/v1 (or Ollama, vLLM, etc.)
+# → API Key: sk-xxx
+# → Model: gpt-4o
+```
+
+---
+
+## Web Dashboard
+
+```bash
+argus dashboard
+# → http://127.0.0.1:8443
+```
+
+- **Dashboard** — stat cards, risk distribution chart, scan history
+- **New Scan** — start scans from browser (htmx, no page reload)
+- **OSINT** — search Shodan/Censys/ZoomEye/FOFA from browser
+- **Settings** — API keys, AI config, notifications, rate limits
+- **Reports** — click any scan to view HTML report
+
+REST API:
+```
+GET  /api/scans                  — list all scans
+GET  /api/scans/{id}             — scan detail
+GET  /api/scans/{id}/findings    — findings for scan
+GET  /api/compare?a={id}&b={id}  — diff two scans
+GET  /api/stats                  — aggregate stats
+POST /api/scan/start             — trigger scan (htmx)
+POST /api/discover               — OSINT search (htmx)
+```
+
+---
+
+## OSINT API Keys
+
+All optional. Set via `argus config ai` (web Settings tab) or env vars:
+
+```bash
+export ARGUS_SHODAN_KEY="..."         # shodan.io
+export ARGUS_CENSYS_ID="..."          # censys.io (API ID)
+export ARGUS_CENSYS_SECRET="..."      # censys.io (API Secret)
+export ARGUS_ZOOMEYE_KEY="..."        # zoomeye.org
+export ARGUS_FOFA_EMAIL="..."         # fofa.info
+export ARGUS_FOFA_KEY="..."           # fofa.info
+export ARGUS_GREYNOISE_KEY="..."      # greynoise.io (optional, community works without)
+export ARGUS_VIRUSTOTAL_KEY="..."     # virustotal.com
+export ARGUS_NVD_KEY="..."            # nvd.nist.gov (free, increases rate limit)
+export ARGUS_AI_KEY="..."             # OpenAI-compatible provider
+```
+
+---
+
+## Scan Presets
+
+| Preset | Recon | Analysis | Use case |
+|---|---|---|---|
+| `quick` | DNS, WHOIS, certificates | headers, techstack, SSL | Fast check |
+| `full` | All 10 recon tools | All analysis + dalfox + sqlmap | Complete pentest |
+| `web` | DNS, httpx, katana, screenshots | headers, SSL, techstack, nuclei, dalfox | Web applications |
+| `recon` | DNS, subdomains, dnsx, tlsx, gau | None | Passive recon only |
+| `bulk` | DNS, httpx | techstack, headers, nuclei | Fast per-host in bulk |
+
+---
+
+## GitHub Actions
+
+```yaml
+- uses: cortexc0de/argus-lite@v1
+  with:
+    target: ${{ vars.SCAN_TARGET }}
+    preset: quick
+    fail-on: HIGH             # Fail CI if risk >= HIGH
+    output-format: sarif      # Auto-uploads to Security tab
+    nvd-api-key: ${{ secrets.NVD_API_KEY }}
+```
+
+---
+
+## Version History
+
+| Version | Release | Highlights |
+|---|---|---|
+| **v2.0.0** | Current | AI Agent mode, JWT auth, threat intel feed |
+| v1.8.0 | | Web Dashboard v2 (Flask + htmx, REST API, charts) |
+| v1.7.0 | | Correlation Engine, plugin integration |
+| v1.6.0 | | Continuous Monitoring, Enhanced AI (Russian, remediation) |
+| v1.5.0 | | Full TUI (5 tabs), Discovery Engine |
+| v1.4.0 | | `argus discover` — vulnerability discovery across OSINT |
+| v1.3.0 | | Censys, ZoomEye, FOFA, GreyNoise OSINT APIs |
+| v1.2.0 | | Bulk Scanner (file/CIDR/ASN), target expander |
+| v1.1.0 | | CVE Correlation, TUI, YAML templates, GitHub Actions, Docker |
+| v1.0.0 | | Initial: 11 tools, Shodan/VT/ST, AI analysis, smart pipeline |
+
+---
+
+## Project Structure
+
+```
+src/argus_lite/
+├── cli.py                    # CLI entry (scan, bulk, discover, agent, monitor, dashboard)
+├── core/
+│   ├── orchestrator.py       # ScanOrchestrator (presets, parallel groups, smart pipeline)
+│   ├── agent.py              # PentestAgent (LLM-driven autonomous scanning)
+│   ├── discovery_engine.py   # Vulnerability discovery across OSINT APIs
+│   ├── bulk_scanner.py       # Multi-target scanning with concurrency
+│   ├── monitor.py            # Continuous monitoring with diff + notify
+│   ├── ai_analyzer.py        # AI analysis (remediation commands, Russian support)
+│   ├── cve_enricher.py       # NVD API v2.0 CVE correlation
+│   ├── correlation.py        # Cross-reference OSINT + CVE + ports → attack surface
+│   ├── config.py             # AppConfig (Pydantic v2, YAML, env overrides)
+│   ├── threat_intel.py       # Threat intelligence feed (recent CVEs for your stack)
+│   └── tool_runner.py        # Safe subprocess execution (never shell=True)
+├── modules/
+│   ├── recon/                # 10 recon modules + 7 OSINT API integrations
+│   ├── analysis/             # nuclei, ports, techstack, headers, ssl, ffuf, dalfox, sqlmap, gf, interactsh
+│   └── report/               # HTML, JSON, Markdown, SARIF, bulk summary
+├── dashboard/
+│   ├── app.py                # Flask + htmx web interface
+│   ├── auth.py               # JWT authentication (HS256)
+│   └── templates/            # base, dashboard, scan, osint, settings
+├── tui/                      # Textual TUI (5 tabs)
+└── models/                   # Pydantic models (scan, finding, recon, analysis, ai, bulk, monitor, discover)
+```
+
+---
+
+## Contributing
 
 ```bash
 git clone https://github.com/cortexc0de/argus-lite.git
 cd argus-lite
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-argus init
+pytest tests/ -v
 ```
 
-## Usage
-
-```bash
-# Quick scan (DNS + headers + tech stack)
-argus scan example.com --preset quick
-
-# Full scan (all 11 tools + smart pipeline)
-argus scan example.com --preset full --output html
-
-# Full scan with AI analysis
-argus scan example.com --preset full --output html --ai
-
-# Recon only (passive, no active scanning)
-argus scan example.com --preset recon
-
-# Web-focused scan
-argus scan example.com --preset web
-
-# Resume interrupted scan
-argus scan example.com --resume <scan-id>
-
-# Custom nuclei templates
-argus scan example.com --templates ~/my-templates/
-
-# With notifications
-argus scan example.com --preset full --notify
-
-# SARIF output for CI/CD
-argus scan example.com --output sarif
-```
-
-### Presets
-
-| Preset | Tools | Duration |
-|--------|-------|----------|
-| `quick` | dig, whois, openssl, headers, whatweb, ssl | 5-10 min |
-| `full` | All 11 tools + screenshots + OSINT APIs | 30-60 min |
-| `recon` | dig, whois, subfinder, openssl, dnsx, tlsx, gau | 5-15 min |
-| `web` | dig, openssl, httpx, katana, screenshots, headers, ssl, whatweb, nuclei | 15-30 min |
-
-### Smart Pipeline
-
-Tools automatically feed data to each other:
-
-```
-subfinder → finds 10 subdomains
-    ↓
-httpx → probes ALL 10 subdomains (not just main target)
-    ↓
-nuclei → scans ALL live hosts with tech-specific templates
-    ↓
-whatweb detects WordPress → nuclei uses -tags wordpress
-    ↓
-katana crawls /api/v1, /admin → ffuf uses these as seed wordlist
-```
-
-## AI Analysis
-
-Argus supports any **OpenAI-compatible API** — OpenAI, Ollama, LM Studio, vLLM, Together AI, etc.
-
-```bash
-# Set your API endpoint
-export ARGUS_AI_KEY="sk-your-key"
-export ARGUS_AI_URL="https://api.openai.com/v1"    # or http://localhost:11434/v1
-export ARGUS_AI_MODEL="gpt-4o"                      # or llama3, mistral, etc.
-
-# Run with AI
-argus scan example.com --preset full --output html --ai
-```
-
-AI generates:
-- **Executive Summary** — 3-5 sentence security posture overview
-- **Attack Chains** — realistic multi-step attack scenarios from findings
-- **Prioritized Findings** — re-ranked by real exploitability
-- **Recommendations** — specific to the target's tech stack
-- **Trend Analysis** — changes compared to previous scan
-
-## Dashboard
-
-```bash
-argus dashboard                          # http://127.0.0.1:8443
-argus dashboard --port 9090              # custom port
-argus dashboard --host 0.0.0.0           # network access
-```
-
-Browse all scans, click to view HTML reports with dark theme.
-
-## OSINT API Keys
-
-```bash
-export ARGUS_SHODAN_KEY="your-key"           # Shodan host lookup
-export ARGUS_VIRUSTOTAL_KEY="your-key"       # VirusTotal domain intel
-export ARGUS_SECURITYTRAILS_KEY="your-key"   # SecurityTrails DNS/subdomain data
-```
-
-## Configuration
-
-```bash
-argus init              # Create ~/.argus-lite/config.yaml (chmod 600)
-argus config show       # View current config
-argus tools check       # Verify all tools installed
-argus plugins list      # List installed plugins
-```
-
-### Scope Control
-
-```bash
-echo "mysite.com" >> ~/.argus-lite/allowlist.txt    # Allow specific targets
-echo "google.com" >> ~/.argus-lite/denylist.txt     # Block specific targets
-```
-
-### Notifications
-
-```bash
-export ARGUS_TELEGRAM_TOKEN="bot-token"
-export ARGUS_TELEGRAM_CHAT_ID="chat-id"
-export ARGUS_DISCORD_WEBHOOK="https://discord.com/api/webhooks/..."
-export ARGUS_SLACK_WEBHOOK="https://hooks.slack.com/..."
-```
-
-## Tools
-
-| Tool | Purpose | Source |
-|------|---------|--------|
-| subfinder | Subdomain discovery | ProjectDiscovery |
-| naabu | Port scanning | ProjectDiscovery |
-| nuclei | Vulnerability scanning | ProjectDiscovery |
-| httpx | HTTP probing | ProjectDiscovery |
-| katana | Web crawling | ProjectDiscovery |
-| dnsx | DNS resolution | ProjectDiscovery |
-| tlsx | TLS cert analysis | ProjectDiscovery |
-| whatweb | Tech fingerprinting | WhatWeb |
-| ffuf | Directory fuzzing | ffuf |
-| gau | Historical URLs | lc/gau |
-| gowitness | Screenshots | SensePost |
-
-## Architecture
-
-```
-CLI (Click)
- ↓
-Input Sanitizer → Scope Validator
- ↓
-Orchestrator (preset-driven, parallel execution)
- ├── Group 0: OSINT APIs (Shodan, VT, ST)
- ├── Group 1: Passive Recon (dig, whois, subfinder, openssl)
- ├── Group 2: Discovery (httpx→all subdomains, katana, gau, dnsx, tlsx, screenshots)
- ├── Group A: Analysis (naabu, whatweb, headers, ssl)
- └── Group B: Smart Analysis (nuclei→all live hosts+tech tags, ffuf→crawl seeds)
- ↓
-Risk Scorer → AI Analyzer (optional)
- ↓
-Report Generator (JSON/MD/HTML/SARIF) → Notifications → Dashboard
-```
-
-```
-src/argus_lite/
-├── cli.py                     # CLI entry point (Click)
-├── core/
-│   ├── orchestrator.py        # Scan coordinator + smart pipeline
-│   ├── ai_analyzer.py         # LLM-powered analysis
-│   ├── config.py              # Pydantic config + env overrides
-│   ├── validator.py           # Input sanitization + scope
-│   ├── tool_runner.py         # Safe subprocess abstraction
-│   ├── risk_scorer.py         # Automatic risk scoring
-│   ├── concurrent.py          # asyncio.gather with error isolation
-│   ├── resume.py              # Partial scan save/load
-│   ├── incremental.py         # Scan diff engine
-│   ├── notifier.py            # Telegram/Discord/Slack
-│   ├── plugin.py              # Plugin ABC
-│   └── plugin_loader.py       # Auto-discovery of plugins
-├── models/                    # Pydantic data models
-├── modules/
-│   ├── recon/                 # 11 recon modules
-│   ├── analysis/              # 6 analysis modules
-│   └── report/                # 5 report generators
-├── dashboard/                 # Flask web UI
-└── pipelines/                 # YAML pipeline definitions
-```
-
-## Testing
-
-```bash
-source .venv/bin/activate
-python -m pytest tests/ -v                                    # All tests
-python -m pytest tests/ --cov=argus_lite --cov-report=html    # Coverage report
-python -m pytest tests/test_ai_analyzer.py -v                 # AI tests only
-```
-
-**411 tests, 84% coverage.** All tests use fixture-based deterministic data — zero network calls.
-
-## Development
-
-Built with **SDD** (Specification-Driven Development) and **TDD** (Test-Driven Development).
-
-### Plugin Development
-
-```python
-# ~/.argus-lite/plugins/my_scanner.py
-from argus_lite.core.plugin import ArgusPlugin
-
-class MyScanner(ArgusPlugin):
-    @property
-    def name(self) -> str: return "my_scanner"
-
-    @property
-    def stage(self) -> str: return "recon"
-
-    def check_available(self) -> bool: return True
-
-    async def run(self, context: dict, config) -> None:
-        context["my_scanner"] = {"custom": "data"}
-```
-
-## Legal Notice
-
-```
-This tool is intended for authorized security testing only.
-Always obtain written permission before scanning any system you do not own.
-Unauthorized scanning may violate computer crime laws in your jurisdiction.
-The authors are not responsible for misuse of this tool.
-```
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
