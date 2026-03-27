@@ -417,8 +417,21 @@ class TestPayloadSkill(Skill):
             return SkillResult(success=False, error=str(exc))
 
 
-def build_skill_registry(config: AppConfig) -> SkillRegistry:
-    """Build a SkillRegistry with all available skills."""
+def build_skill_registry(
+    config: AppConfig,
+    skill_dirs: list["Path"] | None = None,
+) -> SkillRegistry:
+    """Build a SkillRegistry with all available skills.
+
+    Args:
+        config: Application config.
+        skill_dirs: Optional list of directories containing .md custom skills.
+                    If None, loads from config.skills.dirs.
+    """
+    from pathlib import Path
+
+    from argus_lite.core.skill_loader import register_markdown_skills
+
     registry = SkillRegistry()
     registry.register(EnumerateSubdomainsSkill(config))
     registry.register(ProbeHttpSkill(config))
@@ -431,4 +444,12 @@ def build_skill_registry(config: AppConfig) -> SkillRegistry:
     registry.register(DetectTechSkill(config))
     registry.register(ScanPortsSkill(config))
     registry.register(TestPayloadSkill())
+
+    # Load custom .md skills
+    dirs = skill_dirs or [Path(d).expanduser() for d in config.skills.dirs]
+    if dirs:
+        count = register_markdown_skills(registry, dirs)
+        if count:
+            logger.info("Loaded %d custom markdown skills", count)
+
     return registry

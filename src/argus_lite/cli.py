@@ -587,7 +587,9 @@ def monitor(target: str, interval: str, preset: str, notify: bool, max_runs: int
 @click.option("--stealth", is_flag=True, default=False, help="Stealth mode: slow probing, header randomization, WAF evasion")
 @click.option("--mission", default="full_assessment", type=click.Choice(["full_assessment", "data_exfiltration", "admin_access", "rce"]),
               help="Mission type: what the agent is trying to achieve")
-def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool, stealth: bool, mission: str) -> None:
+@click.option("--skills-dir", type=click.Path(exists=True, file_okay=False), default=None,
+              help="Directory with custom .md skill files")
+def agent_mode(target: str, max_steps: int, preset: str, multi_agent: bool, stealth: bool, mission: str, skills_dir: str | None) -> None:
     """AI-driven autonomous pentesting — LLM decides what to scan.
 
     \b

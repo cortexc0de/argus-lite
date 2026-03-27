@@ -99,6 +99,10 @@ class NotificationConfig(BaseModel):
     slack_webhook: str = ""
 
 
+class SkillsConfig(BaseModel):
+    dirs: list[str] = ["~/.argus-lite/skills"]
+
+
 class PluginConfig(BaseModel):
     enabled: bool = True
     plugin_dirs: list[str] = ["~/.argus-lite/plugins"]
@@ -127,6 +131,7 @@ class AppConfig(BaseModel):
     nuclei: NucleiToolConfig = NucleiToolConfig()
     api_keys: ApiKeysConfig = ApiKeysConfig()
     notifications: NotificationConfig = NotificationConfig()
+    skills: SkillsConfig = SkillsConfig()
     plugins: PluginConfig = PluginConfig()
     ai: AIConfig = AIConfig()
     bulk: BulkConfig = BulkConfig()
