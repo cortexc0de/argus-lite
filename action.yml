@@ -99,7 +99,7 @@ runs:
 
     - name: Upload SARIF to GitHub Security tab
       if: inputs.output-format == 'sarif'
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ steps.scan.outputs.report-path }}
       continue-on-error: true
