@@ -1,63 +1,169 @@
 {% extends "base.html" %}
-{% block title %}Argus — New Scan{% endblock %}
+{% block title %}Argus — Scan & Agent{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h2 class="page-title">New Scan</h2>
+  <h2 class="page-title">Scan & Agent Control</h2>
+  <div id="connection-status" style="display:flex;align-items:center;gap:6px;">
+    <span id="ws-dot" style="width:8px;height:8px;border-radius:50%;background:var(--dim);"></span>
+    <span id="ws-label" style="font-size:12px;color:var(--dim);">connecting...</span>
+  </div>
 </div>
 
 <div class="grid-2">
+  <!-- Scan Form -->
   <div class="panel">
-    <div class="panel-title">Scan Configuration</div>
-    <form hx-post="/api/scan/start" hx-target="#scan-output" hx-indicator="#scan-spinner">
+    <div class="panel-title">Pipeline Scan</div>
+    <form id="scan-form">
       <div class="input-group">
         <label>Target</label>
-        <input type="text" name="target" class="input-field" placeholder="example.com, 192.168.1.1, or URL" required>
+        <input type="text" name="target" id="scan-target" class="input-field" placeholder="example.com" required>
       </div>
       <div class="input-group">
         <label>Preset</label>
-        <select name="preset" class="input-field">
+        <select name="preset" id="scan-preset" class="input-field">
           <option value="quick">Quick — DNS, headers, SSL</option>
           <option value="full">Full — all 15 tools</option>
           <option value="web">Web — httpx, nuclei, katana</option>
           <option value="recon">Recon — passive only</option>
         </select>
       </div>
-      <div class="input-group">
-        <label>Output Format</label>
-        <select name="output" class="input-field">
-          <option value="html">HTML Report</option>
-          <option value="json">JSON</option>
-          <option value="md">Markdown</option>
-          <option value="sarif">SARIF (CI/CD)</option>
-        </select>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-        <input type="checkbox" name="ai" id="ai-check" style="accent-color:var(--accent);">
-        <label for="ai-check" style="font-size:14px;color:var(--text);text-transform:none;letter-spacing:0;">Enable AI Analysis</label>
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
-        <span class="htmx-indicator"><span class="spinner"></span></span>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
         Start Scan
       </button>
     </form>
   </div>
 
+  <!-- Agent Form -->
   <div class="panel">
-    <div class="panel-title">Scan Output</div>
-    <div id="scan-output" style="min-height:200px;">
-      <p style="color:var(--dim);text-align:center;padding:40px 0;">Configure and start a scan to see results here.</p>
-    </div>
+    <div class="panel-title">AI Agent</div>
+    <form id="agent-form">
+      <div class="input-group">
+        <label>Target</label>
+        <input type="text" name="target" id="agent-target" class="input-field" placeholder="example.com" required>
+      </div>
+      <div class="input-group">
+        <label>Mission</label>
+        <select name="mission" id="agent-mission" class="input-field">
+          <option value="full_assessment">Full Assessment</option>
+          <option value="data_exfiltration">Data Exfiltration</option>
+          <option value="admin_access">Admin Access</option>
+          <option value="rce">Remote Code Execution</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Max Steps</label>
+        <input type="number" name="max_steps" value="8" min="1" max="30" class="input-field">
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:16px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);">
+          <input type="checkbox" name="stealth" style="accent-color:var(--accent);"> Stealth
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);">
+          <input type="checkbox" name="multi_agent" style="accent-color:var(--accent);"> Multi-Agent
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;background:var(--purple);">
+        Launch Agent
+      </button>
+    </form>
   </div>
 </div>
 
-<div class="panel">
-  <div class="panel-title">Quick Commands</div>
-  <pre>
-# CLI equivalents:
-argus scan example.com --preset quick
-argus scan example.com --preset full --output html --ai
-argus bulk targets.txt --preset web
-argus discover --tech "WordPress 6.3"
-argus monitor example.com --interval 24h</pre>
+<!-- Live Feed -->
+<div class="panel" id="live-panel" style="margin-top:16px;">
+  <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>Live Feed</span>
+    <button class="btn btn-small" onclick="clearFeed()" style="padding:4px 12px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--dim);cursor:pointer;">Clear</button>
+  </div>
+  <div id="live-feed" style="max-height:500px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8;">
+    <div style="color:var(--dim);text-align:center;padding:30px 0;">Waiting for events...</div>
+  </div>
 </div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const socket = io();
+const feed = document.getElementById('live-feed');
+let hasEvents = false;
+
+function addEvent(icon, color, text) {
+  if (!hasEvents) { feed.innerHTML = ''; hasEvents = true; }
+  const ts = new Date().toLocaleTimeString();
+  const div = document.createElement('div');
+  div.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--border);animation:fadeIn .3s ease;';
+  div.innerHTML = '<span style="color:var(--dim);">' + ts + '</span> ' +
+    '<span style="color:' + color + ';">' + icon + '</span> ' + text;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function clearFeed() { feed.innerHTML = '<div style="color:var(--dim);text-align:center;padding:30px 0;">Cleared.</div>'; hasEvents = false; }
+
+// WebSocket events
+socket.on('connect', () => {
+  document.getElementById('ws-dot').style.background = 'var(--accent)';
+  document.getElementById('ws-label').textContent = 'connected';
+  document.getElementById('ws-label').style.color = 'var(--accent)';
+});
+socket.on('disconnect', () => {
+  document.getElementById('ws-dot').style.background = 'var(--red)';
+  document.getElementById('ws-label').textContent = 'disconnected';
+  document.getElementById('ws-label').style.color = 'var(--red)';
+});
+
+socket.on('scan:progress', (d) => {
+  addEvent('&#x25B6;', 'var(--cyan)', '<b>[SCAN]</b> ' + d.target + ' &mdash; ' + d.stage + ': ' + d.status);
+});
+socket.on('scan:done', (d) => {
+  addEvent('&#x2705;', 'var(--accent)', '<b>[SCAN DONE]</b> ' + d.target + ' &mdash; ' + d.findings + ' findings, risk: ' + d.risk +
+    ' <a href="/report/' + d.scan_id + '" style="color:var(--accent);">View Report</a>');
+});
+socket.on('scan:error', (d) => {
+  addEvent('&#x274C;', 'var(--red)', '<b>[SCAN ERROR]</b> ' + d.target + ' &mdash; ' + d.error);
+});
+
+socket.on('agent:step', (d) => {
+  const icon = d.success ? '&#x2705;' : '&#x274C;';
+  const color = d.success ? 'var(--accent)' : 'var(--red)';
+  addEvent(icon, color, '<b>[AGENT #' + d.step + ']</b> ' + d.action +
+    (d.thought ? ' <span style="color:var(--dim);">(' + d.thought.substring(0, 80) + ')</span>' : '') +
+    (d.findings > 0 ? ' <span style="color:var(--orange);">[' + d.findings + ' findings]</span>' : '') +
+    ' &rarr; ' + (d.result || '').substring(0, 100));
+});
+socket.on('agent:done', (d) => {
+  addEvent('&#x1F3C1;', 'var(--accent)', '<b>[AGENT DONE]</b> ' + d.target + ' &mdash; ' + d.total_findings + ' findings, ' + d.steps + ' steps, skills: ' + d.skills_used.join(', '));
+});
+socket.on('agent:error', (d) => {
+  addEvent('&#x274C;', 'var(--red)', '<b>[AGENT ERROR]</b> ' + d.target + ' &mdash; ' + d.error);
+});
+
+// Form handlers
+document.getElementById('scan-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const target = document.getElementById('scan-target').value;
+  const preset = document.getElementById('scan-preset').value;
+  fetch('/api/scan/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({target, preset}),
+  }).then(r => r.json()).then(d => {
+    addEvent('&#x1F680;', 'var(--cyan)', '<b>[SCAN STARTED]</b> ' + target + ' (preset: ' + preset + ')');
+  });
+});
+
+document.getElementById('agent-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const data = {
+    target: f.get('target'), mission: f.get('mission'),
+    max_steps: parseInt(f.get('max_steps')),
+    stealth: !!f.get('stealth'), multi_agent: !!f.get('multi_agent'),
+  };
+  fetch('/api/agent/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  }).then(r => r.json()).then(d => {
+    addEvent('&#x1F916;', 'var(--purple)', '<b>[AGENT STARTED]</b> ' + data.target + ' (mission: ' + data.mission + ', steps: ' + data.max_steps + ')');
+  });
+});
+</script>
 {% endblock %}

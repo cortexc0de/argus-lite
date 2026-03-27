@@ -38,13 +38,13 @@ class TestDashboard:
     def test_app_creates(self):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app("/tmp/nonexistent")
+        app, _sio = create_app("/tmp/nonexistent")
         assert app is not None
 
     def test_index_page(self, dashboard_dir):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app(str(dashboard_dir))
+        app, _sio = create_app(str(dashboard_dir))
         client = app.test_client()
         resp = client.get("/")
         assert resp.status_code == 200
@@ -53,7 +53,7 @@ class TestDashboard:
     def test_scans_list(self, dashboard_dir):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app(str(dashboard_dir))
+        app, _sio = create_app(str(dashboard_dir))
         client = app.test_client()
         resp = client.get("/api/scans")
         assert resp.status_code == 200
@@ -63,7 +63,7 @@ class TestDashboard:
     def test_scan_detail(self, dashboard_dir):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app(str(dashboard_dir))
+        app, _sio = create_app(str(dashboard_dir))
         client = app.test_client()
         resp = client.get("/api/scans/scan-001")
         assert resp.status_code == 200
@@ -73,7 +73,7 @@ class TestDashboard:
     def test_scan_report(self, dashboard_dir):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app(str(dashboard_dir))
+        app, _sio = create_app(str(dashboard_dir))
         client = app.test_client()
         resp = client.get("/report/scan-001")
         assert resp.status_code == 200
@@ -82,7 +82,7 @@ class TestDashboard:
     def test_missing_scan_404(self, dashboard_dir):
         from argus_lite.dashboard.app import create_app
 
-        app = create_app(str(dashboard_dir))
+        app, _sio = create_app(str(dashboard_dir))
         client = app.test_client()
         resp = client.get("/api/scans/nonexistent")
         assert resp.status_code == 404

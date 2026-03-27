@@ -40,7 +40,7 @@ def dashboard_client(tmp_path):
         (report_dir / "report.html").write_text("<html>Report</html>")
 
     from argus_lite.dashboard.app import create_app
-    app = create_app(str(tmp_path))
+    app, _socketio = create_app(str(tmp_path))
     app.config["TESTING"] = True
     return app.test_client()
 

@@ -1005,9 +1005,44 @@ def dashboard(port: int, host: str) -> None:
         raise SystemExit(1)
 
     home = _get_argus_home()
-    app = create_app(str(home))
+    app, _ = create_app(str(home))
     console.print(f"[bold green]Argus Dashboard[/bold green] at http://{host}:{port}")
     app.run(host=host, port=port, debug=False)
+
+
+@main.command("web")
+@click.option("--port", default=8443, help="Web panel port")
+@click.option("--host", default="127.0.0.1", help="Web panel host")
+def web_mode(port: int, host: str) -> None:
+    """Full web control panel — everything from the browser.
+
+    \b
+    Launches the Argus web panel with real-time WebSocket updates.
+    Terminal blocks until Ctrl+C. All operations from the browser:
+    scan, agent, OSINT, settings, reports.
+    """
+    import webbrowser
+
+    try:
+        from argus_lite.dashboard.app import create_app
+    except ImportError:
+        console.print("[red]Flask + flask-socketio required.[/red]")
+        console.print("Install: pip install argus-lite[dashboard]")
+        raise SystemExit(1)
+
+    home = _get_argus_home()
+    app, socketio = create_app(str(home))
+
+    url = f"http://{host}:{port}"
+    console.print()
+    console.print(f"[bold green]  Argus Web Panel[/bold green] [dim]v6.0[/dim]")
+    console.print(f"  [cyan]{url}[/cyan]")
+    console.print()
+    console.print("[dim]  All operations from the browser. Press Ctrl+C to stop.[/dim]")
+    console.print()
+
+    webbrowser.open(url)
+    socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
 
 
 if __name__ == "__main__":
