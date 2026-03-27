@@ -100,6 +100,12 @@ class NotificationConfig(BaseModel):
     slack_webhook: str = ""
 
 
+class ZapConfig(BaseModel):
+    enabled: bool = False
+    api_url: str = "http://127.0.0.1:8090"
+    api_key: str = ""
+
+
 class SkillsConfig(BaseModel):
     dirs: list[str] = ["~/.argus-lite/skills"]
 
@@ -132,6 +138,7 @@ class AppConfig(BaseModel):
     nuclei: NucleiToolConfig = NucleiToolConfig()
     api_keys: ApiKeysConfig = ApiKeysConfig()
     notifications: NotificationConfig = NotificationConfig()
+    zap: ZapConfig = ZapConfig()
     skills: SkillsConfig = SkillsConfig()
     plugins: PluginConfig = PluginConfig()
     ai: AIConfig = AIConfig()

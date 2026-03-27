@@ -146,6 +146,7 @@ class AgentContext:
         self.attack_chains_context: str = ""  # from AttackGraph
         self.intelligence_context: str = ""   # from KB + Meta + TargetScorer
         self.scored_targets: list = []        # from TargetScorer
+        self.http_session: "Any | None" = None  # HttpSessionManager
         self.scan_result = scan_result or ScanResult(
             scan_id="agent", target=target, target_type="domain",
             status="running", started_at=datetime.now(tz=timezone.utc),
