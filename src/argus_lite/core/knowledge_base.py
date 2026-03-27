@@ -11,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class PlaybookStep(BaseModel):
     """A single step in an executable playbook."""
 
     skill: str              # skill name to execute
-    params: dict = {}       # parameters for the skill
+    params: dict = Field(default_factory=dict)       # parameters for the skill
     condition: str = ""     # "if tech contains WordPress"
     on_fail: str = "continue"  # "continue", "abort", "skip_to:N"
 
@@ -100,7 +100,7 @@ class ExploitKnowledge(BaseModel):
     conditions: list[str]          # what must be true for this to apply
     exploit_type: str              # XSS, SQLi, CSRF, IDOR, etc.
     exploit_chain: list[str]       # step-by-step exploit
-    payloads: list[str] = []       # proven payloads
+    payloads: list[str] = Field(default_factory=list)       # proven payloads
     success_count: int = 0
     fail_count: int = 0
     confidence: float = 0.5

@@ -514,11 +514,9 @@ class TestWebSocketSkill(Skill):
         payloads = params.get("payloads", ["ping", '{"type":"subscribe","channel":"test"}'])
 
         try:
-            import websockets  # noqa: F401
+            import websockets
         except ImportError:
             return SkillResult(success=False, error="websockets package not installed")
-
-        import websockets
 
         results: list[dict] = []
         try:

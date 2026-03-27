@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from argus_lite.models.finding import Finding
 
@@ -25,7 +25,7 @@ class AttackNode(BaseModel):
     id: str
     type: str           # vulnerability, asset, access
     label: str
-    data: dict = {}
+    data: dict = Field(default_factory=dict)
 
 
 class AttackEdge(BaseModel):
@@ -35,7 +35,7 @@ class AttackEdge(BaseModel):
     target_id: str
     exploit: str
     probability: float = 0.5
-    requires: list[str] = []
+    requires: list[str] = Field(default_factory=list)
 
 
 class AttackPath(BaseModel):
@@ -50,8 +50,8 @@ class AttackPath(BaseModel):
 class AttackGraph(BaseModel):
     """Incrementally-built graph of exploit chains with search capabilities."""
 
-    nodes: list[AttackNode] = []
-    edges: list[AttackEdge] = []
+    nodes: list[AttackNode] = Field(default_factory=list)
+    edges: list[AttackEdge] = Field(default_factory=list)
 
     # ── Graph Search (v5) ──
 

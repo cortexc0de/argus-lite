@@ -304,28 +304,31 @@ class PentestAgent:
             step_dur = int((_time.monotonic() - step_start) * 1000)
 
             # Adaptive payload refinement — if test_payload found reflection, iterate
-            if action == "test_payload" and skill_result.success and skill_result.data.get("reflected"):
-                attempts = await payload_engine.adaptive_test(
-                    url=params.get("url", f"https://{target}"),
-                    param=params.get("param", ""),
-                    vuln_type=params.get("vuln_type", "xss"),
-                    tech_stack=tech_names,
-                )
-                for att in attempts:
-                    if att.reflected or att.error_in_response:
-                        from argus_lite.models.finding import Finding
-                        vuln_type = "xss" if att.reflected else "error_disclosure"
-                        f = Finding(
-                            id=f"payload-{att.payload[:20]}", type=vuln_type,
-                            severity="MEDIUM" if att.reflected else "LOW",
-                            title=f"Adaptive payload hit: {vuln_type}",
-                            description=f"Payload '{att.payload[:60]}' → HTTP {att.response_code}",
-                            asset=params.get("url", target),
-                            evidence=att.body_preview[:200],
-                            source="payload_engine",
-                            remediation="Sanitize user input",
-                        )
-                        skill_result.findings.append(f)
+            pe_url = params.get("url", f"https://{target}")
+            pe_param = params.get("param", "")
+            if action == "test_payload" and skill_result.success and skill_result.data.get("reflected") and pe_param:
+                try:
+                    attempts = await payload_engine.adaptive_test(
+                        url=pe_url, param=pe_param,
+                        vuln_type=params.get("vuln_type", "xss"),
+                        tech_stack=tech_names,
+                    )
+                    from argus_lite.models.finding import Finding
+                    for att in attempts:
+                        if att.reflected or att.error_in_response:
+                            vuln_type = "xss" if att.reflected else "error_disclosure"
+                            f = Finding(
+                                id=f"payload-{att.payload[:20]}", type=vuln_type,
+                                severity="MEDIUM" if att.reflected else "LOW",
+                                title=f"Adaptive payload hit: {vuln_type}",
+                                description=f"Payload '{att.payload[:60]}' → HTTP {att.response_code}",
+                                asset=pe_url, evidence=att.body_preview[:200],
+                                source="payload_engine",
+                                remediation="Sanitize user input",
+                            )
+                            skill_result.findings.append(f)
+                except Exception as exc:
+                    logger.debug("PayloadEngine adaptive_test failed: %s", exc)
 
             trace.add(TraceEvent(
                 agent="main", action="execute", skill=action,
@@ -399,15 +402,20 @@ class PentestAgent:
             [p.port for p in context.scan_result.analysis.open_ports],
         )
         memory.record_findings(target, [f.title for f in context.scan_result.findings])
-        memory.save()
-        knowledge.save()
-        meta.save()
+        for label, saver in [("memory", memory), ("knowledge", knowledge), ("meta", meta)]:
+            try:
+                saver.save()
+            except Exception as exc:
+                logger.debug("Failed to save %s: %s", label, exc)
 
         # Save attack trace
         from pathlib import Path as _Path
-        trace_dir = _Path.home() / ".argus-lite" / "traces"
-        trace.save(trace_dir / f"{context.scan_result.scan_id}.json")
-        logger.info("Attack trace: %d events saved", len(trace.events))
+        try:
+            trace_dir = _Path.home() / ".argus-lite" / "traces"
+            trace.save(trace_dir / f"{context.scan_result.scan_id}.json")
+            logger.info("Attack trace: %d events saved", len(trace.events))
+        except Exception as exc:
+            logger.debug("Failed to save attack trace: %s", exc)
 
         return AgentResult(
             target=target,

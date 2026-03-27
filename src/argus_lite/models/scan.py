@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from argus_lite.models.ai import AIAnalysis
 from argus_lite.models.analysis import AnalysisResult
@@ -42,13 +42,13 @@ class ScanResult(BaseModel):
     analysis: AnalysisResult = AnalysisResult()
 
     # Aggregated findings
-    findings: list[Finding] = []
-    vulnerabilities: list[Vulnerability] = []
+    findings: list[Finding] = Field(default_factory=list)
+    vulnerabilities: list[Vulnerability] = Field(default_factory=list)
 
     # Metadata
-    tools_used: list[str] = []
-    config_snapshot: dict = {}
-    audit_log: list[AuditEntry] = []
+    tools_used: list[str] = Field(default_factory=list)
+    config_snapshot: dict = Field(default_factory=dict)
+    audit_log: list[AuditEntry] = Field(default_factory=list)
 
     # Risk assessment
     risk_summary: RiskSummary | None = None
@@ -57,6 +57,6 @@ class ScanResult(BaseModel):
     ai_analysis: AIAnalysis | None = None
 
     # Partial results support
-    completed_stages: list[str] = []
-    skipped_stages: list[str] = []
-    errors: list[StageError] = []
+    completed_stages: list[str] = Field(default_factory=list)
+    skipped_stages: list[str] = Field(default_factory=list)
+    errors: list[StageError] = Field(default_factory=list)

@@ -45,7 +45,9 @@ class AgentEventBus:
 
     def subscribe(self, event_type: str, callback: EventCallback) -> None:
         """Register a callback for an event type. Supports both sync and async."""
-        self._subscribers.setdefault(event_type, []).append(callback)
+        callbacks = self._subscribers.setdefault(event_type, [])
+        if callback not in callbacks:
+            callbacks.append(callback)
 
     def unsubscribe(self, event_type: str, callback: EventCallback) -> None:
         """Remove a callback."""
@@ -62,7 +64,9 @@ class AgentEventBus:
             try:
                 result = cb(event)
                 if asyncio.iscoroutine(result):
-                    await result
+                    await asyncio.wait_for(result, timeout=10)
+            except asyncio.TimeoutError:
+                logger.warning("Event callback timeout for '%s'", event.type)
             except Exception as exc:
                 logger.warning("Event callback failed for '%s': %s", event.type, exc)
 

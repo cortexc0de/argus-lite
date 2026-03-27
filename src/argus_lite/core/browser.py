@@ -62,8 +62,12 @@ class BrowserAgent:
         from playwright.async_api import async_playwright
 
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=headless)
-        self._page = await self._browser.new_page()
+        try:
+            self._browser = await self._pw.chromium.launch(headless=headless)
+            self._page = await self._browser.new_page()
+        except Exception:
+            await self._pw.stop()
+            raise
 
         # Intercept XHR/fetch requests
         self._page.on("request", self._on_request)

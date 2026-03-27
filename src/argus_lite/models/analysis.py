@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Port(BaseModel):
@@ -38,7 +38,7 @@ class SecurityHeadersResult(BaseModel):
     x_xss_protection: bool = False
     referrer_policy: bool = False
     permissions_policy: bool = False
-    missing_headers: list[str] = []
+    missing_headers: list[str] = Field(default_factory=list)
 
 
 class NucleiFinding(BaseModel):
@@ -47,8 +47,8 @@ class NucleiFinding(BaseModel):
     severity: str  # info, low — enforced at config level
     matched_at: str = ""
     description: str = ""
-    reference: list[str] = []
-    tags: list[str] = []
+    reference: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class FfufResult(BaseModel):
@@ -92,12 +92,12 @@ class InteractshEvent(BaseModel):
 class AnalysisResult(BaseModel):
     """Aggregated result from analysis module."""
 
-    open_ports: list[Port] = []
-    technologies: list[Technology] = []
+    open_ports: list[Port] = Field(default_factory=list)
+    technologies: list[Technology] = Field(default_factory=list)
     ssl_info: SSLInfo | None = None
     security_headers: SecurityHeadersResult | None = None
-    nuclei_findings: list[NucleiFinding] = []
-    fuzz_results: list[FfufResult] = []
-    xss_findings: list[DalfoxFinding] = []
-    sqli_findings: list[SqlmapFinding] = []
-    oast_events: list[InteractshEvent] = []
+    nuclei_findings: list[NucleiFinding] = Field(default_factory=list)
+    fuzz_results: list[FfufResult] = Field(default_factory=list)
+    xss_findings: list[DalfoxFinding] = Field(default_factory=list)
+    sqli_findings: list[SqlmapFinding] = Field(default_factory=list)
+    oast_events: list[InteractshEvent] = Field(default_factory=list)

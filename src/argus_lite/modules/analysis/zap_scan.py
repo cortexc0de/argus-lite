@@ -6,40 +6,64 @@ Requires ZAP API key configured in config.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import httpx
 
-from argus_lite.models.finding import Finding, normalize_severity
+from argus_lite.models.finding import Finding
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_ZAP_URL = "http://127.0.0.1:8090"
 
 
+async def _poll_zap_status(
+    client: httpx.AsyncClient,
+    status_url: str,
+    params: dict[str, str],
+    label: str,
+    max_polls: int = 120,
+    done_value: int | str = 100,
+    done_key: str = "status",
+) -> None:
+    """Poll a ZAP status endpoint until complete, error, or timeout."""
+    for _ in range(max_polls):
+        resp = await client.get(status_url, params=params)
+        raw = resp.json().get(done_key, "0")
+
+        # Numeric status (spider/ascan): 0..100, <0 = error
+        if isinstance(done_value, int):
+            progress = int(raw)
+            if progress >= done_value:
+                return
+            if progress < 0:
+                logger.warning("ZAP %s error state: %s", label, resp.text[:200])
+                return
+        # String status (ajax spider): "stopped"
+        elif raw == done_value:
+            return
+
+        await asyncio.sleep(2)
+
+    logger.warning("ZAP %s timeout after %d poll attempts", label, max_polls)
+
+
 async def zap_spider(target: str, api_url: str = DEFAULT_ZAP_URL, api_key: str = "") -> list[str]:
     """Run ZAP spider and return discovered URLs."""
     async with httpx.AsyncClient(timeout=300) as client:
-        # Start spider
         resp = await client.get(
             f"{api_url}/JSON/spider/action/scan/",
             params={"url": target, "apikey": api_key},
         )
         scan_id = resp.json().get("scan", "0")
 
-        # Poll until complete
-        import asyncio
-        for _ in range(120):
-            status = await client.get(
-                f"{api_url}/JSON/spider/view/status/",
-                params={"scanId": scan_id, "apikey": api_key},
-            )
-            if int(status.json().get("status", "0")) >= 100:
-                break
-            await asyncio.sleep(2)
+        await _poll_zap_status(
+            client, f"{api_url}/JSON/spider/view/status/",
+            {"scanId": scan_id, "apikey": api_key}, "spider",
+        )
 
-        # Get results
         results = await client.get(
             f"{api_url}/JSON/spider/view/results/",
             params={"scanId": scan_id, "apikey": api_key},
@@ -60,21 +84,19 @@ async def zap_active_scan(
         )
         scan_id = resp.json().get("scan", "0")
 
-        import asyncio
-        for _ in range(300):
-            status = await client.get(
-                f"{api_url}/JSON/ascan/view/status/",
-                params={"scanId": scan_id, "apikey": api_key},
-            )
-            if int(status.json().get("status", "0")) >= 100:
-                break
-            await asyncio.sleep(2)
+        await _poll_zap_status(
+            client, f"{api_url}/JSON/ascan/view/status/",
+            {"scanId": scan_id, "apikey": api_key}, "active_scan",
+            max_polls=300,
+        )
 
-        # Get alerts
         alerts_resp = await client.get(
             f"{api_url}/JSON/alert/view/alerts/",
             params={"baseurl": target, "apikey": api_key},
         )
+        if alerts_resp.status_code != 200:
+            logger.error("ZAP alerts query failed: %d", alerts_resp.status_code)
+            return []
         alerts = alerts_resp.json().get("alerts", [])
 
         return [_alert_to_finding(a) for a in alerts]
@@ -92,23 +114,21 @@ async def zap_ajax_spider(
             params={"url": target, "apikey": api_key},
         )
 
-        import asyncio
-        for _ in range(120):
-            status = await client.get(
-                f"{api_url}/JSON/ajaxSpider/view/status/",
-                params={"apikey": api_key},
-            )
-            if status.json().get("status") == "stopped":
-                break
-            await asyncio.sleep(2)
+        await _poll_zap_status(
+            client, f"{api_url}/JSON/ajaxSpider/view/status/",
+            {"apikey": api_key}, "ajax_spider",
+            done_value="stopped",
+        )
 
         results = await client.get(
             f"{api_url}/JSON/ajaxSpider/view/results/",
             params={"apikey": api_key, "start": "0", "count": "500"},
         )
-        return [r.get("requestHeader", "").split(" ")[1]
-                for r in results.json().get("results", [])
-                if r.get("requestHeader")]
+        return [
+            r.get("requestHeader", "").split(" ")[1]
+            for r in results.json().get("results", [])
+            if r.get("requestHeader")
+        ]
 
 
 def _alert_to_finding(alert: dict[str, Any]) -> Finding:
