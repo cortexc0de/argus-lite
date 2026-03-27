@@ -9,7 +9,7 @@ Argus is designed exclusively for **authorized security testing**. Always obtain
 If you discover a security vulnerability in Argus itself (not in targets you're scanning), please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue
-2. Email: **cortexc0de@proton.me**
+2. Email: **c0rtexc0de@proton.me**
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
