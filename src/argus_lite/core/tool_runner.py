@@ -70,7 +70,7 @@ class BaseToolRunner:
         """Get resolved executable path."""
         return self._resolved_path or self.path
 
-    async def run(self, args: list[str], timeout: int = 300) -> ToolOutput:
+    async def run(self, args: list[str], timeout: int = 300, stdin_data: str | None = None) -> ToolOutput:
         """Run the tool with given arguments. Never uses shell=True."""
         if not self.check_available():
             raise ToolNotFoundError(
@@ -83,11 +83,13 @@ class BaseToolRunner:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *command,
+                stdin=asyncio.subprocess.PIPE if stdin_data else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            stdin_bytes = stdin_data.encode("utf-8") if stdin_data else None
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
+                proc.communicate(input=stdin_bytes), timeout=timeout
             )
         except asyncio.TimeoutError:
             # Kill the process on timeout

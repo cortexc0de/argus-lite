@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from argus_lite.core.config import AppConfig
 from argus_lite.core.tool_runner import BaseToolRunner
-from argus_lite.models.finding import Finding
+from argus_lite.models.finding import SENSITIVE_PATHS, Finding, nuclei_finding_to_finding
 
 if TYPE_CHECKING:
     from argus_lite.core.agent_context import AgentContext
@@ -182,13 +182,14 @@ class ScanNucleiSkill(Skill):
 
         target = params.get("target", f"https://{context.target}")
         runner = BaseToolRunner("nuclei", str(self._config.tools.nuclei.path))
-        findings = await nuclei_scan(target, runner=runner)
-        context.scan_result.analysis.nuclei_findings.extend(findings)
+        nuclei_findings = await nuclei_scan(target, runner=runner)
+        context.scan_result.analysis.nuclei_findings.extend(nuclei_findings)
+        converted = [nuclei_finding_to_finding(nf, target) for nf in nuclei_findings]
         return SkillResult(
             success=True,
-            data={"count": len(findings)},
-            findings=[],
-            summary=f"Nuclei found {len(findings)} results on {target}",
+            data={"count": len(nuclei_findings)},
+            findings=converted,
+            summary=f"Nuclei found {len(nuclei_findings)} results on {target}",
         )
 
 
@@ -210,9 +211,22 @@ class FuzzPathsSkill(Skill):
         runner = BaseToolRunner("ffuf", str(self._config.tools.ffuf.path))
         results = await ffuf_scan(target, runner=runner)
         context.scan_result.analysis.fuzz_results.extend(results)
+        _SENSITIVE = SENSITIVE_PATHS
+        converted = [
+            Finding(
+                id=f"fuzz-{r.url}", type="sensitive_path", severity="LOW",
+                title=f"Sensitive path: {r.url}", description=f"HTTP {r.status_code} at {r.url}",
+                asset=target, evidence=f"Status: {r.status_code}, Length: {r.content_length}",
+                source="ffuf", remediation="Restrict access or remove sensitive endpoint",
+            )
+            for r in results
+            if r.status_code in (200, 301, 302, 403)
+            and any(kw in r.url.lower() for kw in _SENSITIVE)
+        ]
         return SkillResult(
             success=True,
             data={"count": len(results), "paths": [r.url for r in results[:10]]},
+            findings=converted,
             summary=f"Fuzzed {len(results)} paths on {target}",
         )
 
@@ -237,7 +251,7 @@ class ScanXssSkill(Skill):
         findings = await dalfox_scan(target, runner=runner, urls=urls if len(urls) > 1 else None)
         context.scan_result.analysis.xss_findings.extend(findings)
         xss_findings = [
-            Finding(id=f"xss-{f.param}", type="xss", severity="LOW",
+            Finding(id=f"xss-{f.param}", type="xss", severity="MEDIUM",
                     title=f"XSS ({f.type}) in '{f.param}'", description=f.evidence,
                     asset=f.url, evidence=f.payload[:100], source="dalfox",
                     remediation="Sanitize input, implement CSP")
@@ -269,7 +283,7 @@ class ScanSqliSkill(Skill):
         findings = await sqlmap_scan(url, runner=runner)
         context.scan_result.analysis.sqli_findings.extend(findings)
         sqli_findings = [
-            Finding(id=f"sqli-{f.param}", type="sqli", severity="LOW",
+            Finding(id=f"sqli-{f.param}", type="sqli", severity="HIGH",
                     title=f"SQLi ({f.type}) in '{f.param}'", description=f"DBMS: {f.dbms}",
                     asset=f.url, evidence=f.payload[:100], source="sqlmap",
                     remediation="Use parameterized queries")

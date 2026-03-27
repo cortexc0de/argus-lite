@@ -222,33 +222,45 @@ class PentestAgent:
         context.scan_result = await orch.run()
         context.scan_result.risk_summary = score_scan(context.scan_result)
 
-        # Environment detection (WAF, CDN, anti-bot)
         try:
             env_detector = EnvironmentDetector()
             context.environment = await env_detector.detect(target)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Environment detection failed: %s", exc)
 
         # ── Phase 2: Intelligence Layer ──
 
-        # Goal hierarchy (mission-driven)
-        goal_hierarchy = await create_goal_hierarchy(self._config, context, mission=mission)
+        try:
+            goal_hierarchy = await create_goal_hierarchy(self._config, context, mission=mission)
+        except Exception as exc:
+            logger.debug("Goal hierarchy creation failed, using fallback: %s", exc)
+            goal_hierarchy = GoalHierarchy(mission=mission, goals=[])
 
-        # Knowledge base — find applicable exploit patterns
         tech_names = [t.name for t in context.scan_result.analysis.technologies]
         kb_context = knowledge.to_llm_context(tech_names)
 
-        # Target scoring — prioritize endpoints
         all_urls = [c.url for c in context.scan_result.recon.crawl_results]
         all_urls += [h.url for h in context.scan_result.recon.historical_urls]
         scored_targets = TargetScorer.score_endpoints(all_urls) if all_urls else []
+        context.scored_targets = scored_targets
 
-        # Meta-learning — get skill priorities for this tech
         meta_context = meta.to_llm_context(tech_names)
 
-        # Attack plan
+        parts: list[str] = []
+        if kb_context:
+            parts.append(f"Knowledge Base:\n{kb_context}")
+        if meta_context:
+            parts.append(f"Meta-Learning:\n{meta_context}")
+        if scored_targets:
+            parts.append(f"Priority targets: {', '.join(t.url for t in scored_targets[:5])}")
+        context.intelligence_context = "\n".join(parts)
+
         planner = AgentPlanner(self._config)
-        context.plan = await planner.create_plan(context)
+        try:
+            context.plan = await planner.create_plan(context)
+        except Exception as exc:
+            logger.debug("Plan creation failed, using fallback: %s", exc)
+            context.plan = AgentPlan(goal="Assess target security", steps=[])
 
         # ── Phase 3: Execute Loop ──
         skills_used: list[str] = []

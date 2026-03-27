@@ -42,21 +42,26 @@ class TestFinding:
             )
             assert f.severity == sev
 
-    def test_finding_severity_rejects_high_critical(self):
+    def test_finding_severity_accepts_all_valid_levels(self):
         from argus_lite.models.finding import Finding
 
-        for sev in ("MEDIUM", "HIGH", "CRITICAL"):
+        for sev in ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"):
+            f = Finding(
+                id="f-001", type="test", severity=sev,
+                title="Test", description="Test", asset="test.com",
+                evidence="none", source="test", remediation="none",
+            )
+            assert f.severity == sev
+
+    def test_finding_severity_rejects_invalid(self):
+        from argus_lite.models.finding import Finding
+
+        for sev in ("UNKNOWN", "WARNING", "extreme"):
             with pytest.raises(ValidationError):
                 Finding(
-                    id="f-001",
-                    type="test",
-                    severity=sev,
-                    title="Test",
-                    description="Test",
-                    asset="test.com",
-                    evidence="none",
-                    source="test",
-                    remediation="none",
+                    id="f-001", type="test", severity=sev,
+                    title="Test", description="Test", asset="test.com",
+                    evidence="none", source="test", remediation="none",
                 )
 
     def test_finding_json_roundtrip(self):

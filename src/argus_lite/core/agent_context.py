@@ -144,6 +144,8 @@ class AgentContext:
         self.environment = environment  # EnvironmentProfile
         self.stealth = stealth          # StealthConfig
         self.attack_chains_context: str = ""  # from AttackGraph
+        self.intelligence_context: str = ""   # from KB + Meta + TargetScorer
+        self.scored_targets: list = []        # from TargetScorer
         self.scan_result = scan_result or ScanResult(
             scan_id="agent", target=target, target_type="domain",
             status="running", started_at=datetime.now(tz=timezone.utc),
@@ -230,6 +232,10 @@ class AgentContext:
         # Attack chains (from graph search)
         if self.attack_chains_context:
             lines.append(f"\n{self.attack_chains_context}")
+
+        # Intelligence context (knowledge base + meta-learning + target scoring)
+        if self.intelligence_context:
+            lines.append(f"\n{self.intelligence_context}")
 
         # Available skills
         if self.skill_registry:

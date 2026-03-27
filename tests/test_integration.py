@@ -191,14 +191,24 @@ class TestSecurityEnforcement:
         assert len(findings) == 1
         assert findings[0].severity == "info"
 
-    def test_finding_model_rejects_high_severity(self):
+    def test_finding_model_accepts_high_severity(self):
+        from argus_lite.models.finding import Finding
+
+        f = Finding(
+            id="f1", type="test", severity="HIGH", title="T",
+            description="D", asset="a", evidence="e", source="s",
+            remediation="r",
+        )
+        assert f.severity == "HIGH"
+
+    def test_finding_model_rejects_invalid_severity(self):
         from pydantic import ValidationError
 
         from argus_lite.models.finding import Finding
 
         with pytest.raises(ValidationError):
             Finding(
-                id="f1", type="test", severity="HIGH", title="T",
+                id="f1", type="test", severity="EXTREME", title="T",
                 description="D", asset="a", evidence="e", source="s",
                 remediation="r",
             )

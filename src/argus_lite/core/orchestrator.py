@@ -12,7 +12,7 @@ from argus_lite.core.concurrent import run_parallel
 from argus_lite.core.config import AppConfig
 from argus_lite.core.tool_runner import BaseToolRunner, ToolNotFoundError
 from argus_lite.models.analysis import AnalysisResult
-from argus_lite.models.finding import Finding
+from argus_lite.models.finding import SENSITIVE_PATHS, Finding, nuclei_finding_to_finding
 from argus_lite.models.recon import ReconResult
 from argus_lite.models.scan import ScanResult, StageError
 
@@ -338,7 +338,8 @@ class ScanOrchestrator:
                     return
                 targets = [s.name for s in self._recon_result.subdomains] or [self.target]
                 runner = self._make_runner("dnsx", str(cfg.path))
-                result = await runner.run(["-json", "-silent", "-a", "-aaaa", "-cname"])
+                stdin_input = "\n".join(targets)
+                result = await runner.run(["-json", "-silent", "-a", "-aaaa", "-cname"], stdin_data=stdin_input)
                 self._recon_result.dns_resolutions = parse_dnsx_output(result.stdout)
                 self._tools_used.append("dnsx")
             group2.append(self._run_subtask("dnsx", do_dnsx()))
@@ -418,6 +419,7 @@ class ScanOrchestrator:
             async def do_ssl():
                 runner = self._make_runner("openssl", "/usr/bin/openssl")
                 self._analysis_result.ssl_info = await ssl_check(self.target, runner=runner)
+                self._tools_used.append("openssl-ssl")
             group_a.append(self._run_subtask("ssl", do_ssl()))
 
         if self._is_enabled("headers"):
@@ -495,20 +497,7 @@ class ScanOrchestrator:
         """Convert analysis results into Finding objects for the report."""
         # Nuclei findings → Finding objects
         for nf in self._analysis_result.nuclei_findings:
-            sev = nf.severity.upper() if nf.severity else "INFO"
-            if sev not in ("INFO", "LOW"):
-                sev = "LOW"  # enforce ceiling
-            f = Finding(
-                id=f"nuclei-{nf.template_id}",
-                type="nuclei",
-                severity=sev,
-                title=nf.name or nf.template_id,
-                description=nf.description or f"Nuclei template {nf.template_id} matched",
-                asset=nf.matched_at or self.target,
-                evidence=f"Template: {nf.template_id}, tags: {', '.join(nf.tags)}",
-                source="nuclei",
-                remediation="Review and fix the identified issue",
-            )
+            f = nuclei_finding_to_finding(nf, self.target)
             self._findings.append(f)
             if self._on_finding:
                 self._on_finding(f)
@@ -538,9 +527,7 @@ class ScanOrchestrator:
         # Discovered paths (ffuf) with sensitive status codes → Finding
         for fr in self._analysis_result.fuzz_results:
             if fr.status_code in (200, 301, 302, 403) and any(
-                kw in fr.url.lower() for kw in
-                ("/admin", "/backup", "/.git", "/.env", "/wp-admin", "/phpmyadmin",
-                 "/config", "/debug", "/api/", "/.htaccess")
+                kw in fr.url.lower() for kw in SENSITIVE_PATHS
             ):
                 f = Finding(
                     id=f"fuzz-{fr.url}",
@@ -562,7 +549,7 @@ class ScanOrchestrator:
             f = Finding(
                 id=f"xss-{xf.param}-{xf.type}",
                 type="xss",
-                severity="LOW",
+                severity="MEDIUM",
                 title=f"XSS ({xf.type}) in parameter '{xf.param}'",
                 description=f"Cross-site scripting found at {xf.url}",
                 asset=xf.url or self.target,
@@ -579,7 +566,7 @@ class ScanOrchestrator:
             f = Finding(
                 id=f"sqli-{sf.param}-{sf.type}",
                 type="sqli",
-                severity="LOW",
+                severity="HIGH",
                 title=f"SQL Injection ({sf.type}) in '{sf.param}'",
                 description=f"SQL injection via {sf.type} on {sf.url}, DBMS: {sf.dbms}",
                 asset=sf.url or self.target,
