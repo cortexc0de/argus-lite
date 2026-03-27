@@ -18,6 +18,80 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PATH = Path.home() / ".argus-lite" / "agent" / "knowledge.json"
 
 
+class PlaybookStep(BaseModel):
+    """A single step in an executable playbook."""
+
+    skill: str              # skill name to execute
+    params: dict = {}       # parameters for the skill
+    condition: str = ""     # "if tech contains WordPress"
+    on_fail: str = "continue"  # "continue", "abort", "skip_to:N"
+
+
+class Playbook(BaseModel):
+    """An executable multi-step exploit sequence compiled from knowledge."""
+
+    name: str
+    tech_match: list[str]   # technologies that trigger this playbook
+    steps: list[PlaybookStep]
+    source_knowledge_id: str = ""
+
+    def matches_tech(self, tech_stack: list[str]) -> bool:
+        """Check if any tech in the stack matches this playbook."""
+        stack_lower = {t.lower() for t in tech_stack}
+        return any(t.lower() in stack_lower for t in self.tech_match)
+
+
+# Built-in playbooks compiled from knowledge
+BUILTIN_PLAYBOOKS: list[Playbook] = [
+    Playbook(
+        name="wordpress_csrf_chain",
+        tech_match=["wordpress"],
+        source_knowledge_id="wp-ajax-csrf",
+        steps=[
+            PlaybookStep(skill="crawl_site", params={}, condition=""),
+            PlaybookStep(skill="scan_nuclei", params={"tags": "wordpress"}, condition=""),
+            PlaybookStep(skill="fuzz_paths", params={"wordlist": "wp-admin"}, condition=""),
+            PlaybookStep(skill="check_headers", params={}, condition=""),
+            PlaybookStep(skill="test_payload", params={"url": "/wp-admin/admin-ajax.php"}, condition="if ajax found"),
+        ],
+    ),
+    Playbook(
+        name="graphql_idor_chain",
+        tech_match=["graphql"],
+        source_knowledge_id="graphql-idor",
+        steps=[
+            PlaybookStep(skill="graphql_introspect", params={}, condition=""),
+            PlaybookStep(skill="test_payload", params={"vuln_type": "idor"}, condition="if idor_candidates found"),
+        ],
+    ),
+    Playbook(
+        name="laravel_debug_leak",
+        tech_match=["laravel"],
+        source_knowledge_id="laravel-debug",
+        steps=[
+            PlaybookStep(skill="detect_tech", params={}, condition=""),
+            PlaybookStep(skill="fuzz_paths", params={}, condition=""),
+            PlaybookStep(skill="test_payload", params={"url": "/_ignition/health-check"}, condition=""),
+            PlaybookStep(skill="test_payload", params={"url": "/.env"}, condition=""),
+        ],
+    ),
+    Playbook(
+        name="jwt_bypass",
+        tech_match=["jwt", "json web token"],
+        source_knowledge_id="jwt-alg-none",
+        steps=[
+            PlaybookStep(skill="check_headers", params={}, condition=""),
+            PlaybookStep(skill="test_payload", params={"vuln_type": "auth_bypass"}, condition="if jwt detected"),
+        ],
+    ),
+]
+
+
+def get_playbooks_for_tech(tech_stack: list[str]) -> list[Playbook]:
+    """Return all playbooks that match the detected tech stack."""
+    return [p for p in BUILTIN_PLAYBOOKS if p.matches_tech(tech_stack)]
+
+
 class ExploitKnowledge(BaseModel):
     """A structured piece of exploit knowledge."""
 
