@@ -263,7 +263,7 @@ install_security_tools() {
 
     install_binary "dalfox" \
         "hahwul/dalfox" \
-        "https://github.com/hahwul/dalfox/releases/download/{VERSION}/dalfox_{VER}_{OS}_{ARCH}.tar.gz"
+        "https://github.com/hahwul/dalfox/releases/download/{VERSION}/dalfox-{OS}-{ARCH}.tar.gz"
 
     install_binary "interactsh-client" \
         "projectdiscovery/interactsh" \
@@ -275,6 +275,34 @@ install_security_tools() {
             run_with_spinner "Installing sqlmap (pip)" pip3 install sqlmap || true
     else
         ok "sqlmap already installed ($(command -v sqlmap))"
+    fi
+
+    # amass — subdomain enumeration (from Kali repos or binary)
+    if ! command -v amass &>/dev/null; then
+        run_with_spinner "Installing amass" sudo apt install -y amass 2>/dev/null || \
+            install_binary "amass" \
+                "owasp-amass/amass" \
+                "https://github.com/owasp-amass/amass/releases/download/{VERSION}/amass_{OS}_{ARCH}.zip"
+    else
+        ok "amass already installed ($(command -v amass))"
+    fi
+
+    # gf — pattern matching for parameter filtering
+    if ! command -v gf &>/dev/null; then
+        install_binary "gf" \
+            "tomnomnom/gf" \
+            "https://github.com/tomnomnom/gf/releases/download/{VERSION}/gf-{OS}-{ARCH}-{VER}.tgz" || true
+    else
+        ok "gf already installed ($(command -v gf))"
+    fi
+
+    # OWASP ZAP — active scanner (optional, Java-based)
+    if ! command -v zaproxy &>/dev/null && ! command -v zap.sh &>/dev/null; then
+        info "Installing OWASP ZAP (optional)..."
+        run_with_spinner "Installing zaproxy" sudo apt install -y zaproxy 2>/dev/null || \
+            warn "ZAP not available in repos (install manually or use Docker: docker run -d -p 8090:8090 ghcr.io/zaproxy/zaproxy)"
+    else
+        ok "ZAP already installed"
     fi
 
     # Set naabu raw socket capability
