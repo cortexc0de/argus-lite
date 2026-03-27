@@ -188,15 +188,19 @@ class PentestAgent:
         Phase 3: Execute loop (decide → execute → feedback → meta-learn → adapt)
         Phase 4: Save memory + knowledge + meta stats
         """
+        import time as _time
+
         from argus_lite.core.attack_graph import AttackGraph
         from argus_lite.core.environment import EnvironmentDetector, StealthConfig
         from argus_lite.core.goal_engine import GoalHierarchy, create_goal_hierarchy
         from argus_lite.core.knowledge_base import KnowledgeBase
         from argus_lite.core.meta_learning import MetaLearner, SkillOutcome
         from argus_lite.core.orchestrator import ScanOrchestrator
+        from argus_lite.core.payload_engine import PayloadEngine
         from argus_lite.core.risk_scorer import score_scan
         from argus_lite.core.skills import build_skill_registry
         from argus_lite.core.target_scorer import TargetScorer
+        from argus_lite.core.trace import AttackTrace, TraceEvent
 
         registry = self._skill_registry or build_skill_registry(app_config)
         memory = AgentMemory()
@@ -206,6 +210,8 @@ class PentestAgent:
         meta = MetaLearner()
         meta.load()
         attack_graph = AttackGraph()
+        payload_engine = PayloadEngine(self._config)
+        trace = AttackTrace()
 
         stealth_config = StealthConfig(enabled=stealth) if stealth else None
 
@@ -290,7 +296,42 @@ class PentestAgent:
             if "target" not in params:
                 params["target"] = target
 
+            trace.add(TraceEvent(agent="main", action="decide", skill=action, thought=thought))
+            step_start = _time.monotonic()
+
             skill_result = await registry.execute(action, params, context)
+
+            step_dur = int((_time.monotonic() - step_start) * 1000)
+
+            # Adaptive payload refinement — if test_payload found reflection, iterate
+            if action == "test_payload" and skill_result.success and skill_result.data.get("reflected"):
+                attempts = await payload_engine.adaptive_test(
+                    url=params.get("url", f"https://{target}"),
+                    param=params.get("param", ""),
+                    vuln_type=params.get("vuln_type", "xss"),
+                    tech_stack=tech_names,
+                )
+                for att in attempts:
+                    if att.reflected or att.error_in_response:
+                        from argus_lite.models.finding import Finding
+                        vuln_type = "xss" if att.reflected else "error_disclosure"
+                        f = Finding(
+                            id=f"payload-{att.payload[:20]}", type=vuln_type,
+                            severity="MEDIUM" if att.reflected else "LOW",
+                            title=f"Adaptive payload hit: {vuln_type}",
+                            description=f"Payload '{att.payload[:60]}' → HTTP {att.response_code}",
+                            asset=params.get("url", target),
+                            evidence=att.body_preview[:200],
+                            source="payload_engine",
+                            remediation="Sanitize user input",
+                        )
+                        skill_result.findings.append(f)
+
+            trace.add(TraceEvent(
+                agent="main", action="execute", skill=action,
+                result=skill_result.summary or skill_result.error,
+                findings_count=len(skill_result.findings), duration_ms=step_dur,
+            ))
 
             # Record step
             step = AgentStep(
@@ -361,6 +402,12 @@ class PentestAgent:
         memory.save()
         knowledge.save()
         meta.save()
+
+        # Save attack trace
+        from pathlib import Path as _Path
+        trace_dir = _Path.home() / ".argus-lite" / "traces"
+        trace.save(trace_dir / f"{context.scan_result.scan_id}.json")
+        logger.info("Attack trace: %d events saved", len(trace.events))
 
         return AgentResult(
             target=target,

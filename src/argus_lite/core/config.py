@@ -77,6 +77,7 @@ class ToolsConfig(BaseModel):
     sqlmap: ToolEntry = ToolEntry(path=Path("/usr/bin/sqlmap"))
     interactsh: ToolEntry = ToolEntry(path=Path("/usr/local/bin/interactsh-client"))
     gf: ToolEntry = ToolEntry(path=Path("/usr/local/bin/gf"))
+    amass: ToolEntry = ToolEntry(path=Path("/usr/local/bin/amass"))
 
 
 class ApiKeysConfig(BaseModel):

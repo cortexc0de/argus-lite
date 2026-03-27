@@ -193,6 +193,7 @@ class ScanOrchestrator:
         from argus_lite.modules.recon.katana_crawl import katana_crawl
         from argus_lite.modules.recon.securitytrails_api import st_lookup
         from argus_lite.modules.recon.shodan_api import shodan_lookup
+        from argus_lite.modules.recon.amass_enum import amass_enumerate
         from argus_lite.modules.recon.subdomains import subdomain_enumerate
         from argus_lite.modules.recon.tlsx_certs import tlsx_scan
         from argus_lite.modules.recon.virustotal_api import vt_lookup
@@ -280,6 +281,21 @@ class ScanOrchestrator:
                 self._recon_result.subdomains = await subdomain_enumerate(self.target, runner=runner)
                 self._tools_used.append("subfinder")
             group1.append(self._run_subtask("subdomains", do_subdomains()))
+
+            async def do_amass():
+                cfg = self.config.tools.amass
+                if not cfg.enabled:
+                    return
+                runner = self._make_runner("amass", str(cfg.path))
+                amass_subs = await amass_enumerate(self.target, runner=runner)
+                # Merge with subfinder results (deduplicate)
+                existing = {s.name for s in self._recon_result.subdomains}
+                for s in amass_subs:
+                    if s.name not in existing:
+                        self._recon_result.subdomains.append(s)
+                        existing.add(s.name)
+                self._tools_used.append("amass")
+            group1.append(self._run_subtask("amass", do_amass()))
 
         if self._is_enabled("certificates"):
             async def do_certs():
