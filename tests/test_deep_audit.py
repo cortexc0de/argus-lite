@@ -234,7 +234,7 @@ class TestAllSkillsInterface:
     def test_all_skills_registered(self):
         from argus_lite.core.skills import build_skill_registry
         registry = build_skill_registry(AppConfig())
-        assert len(registry._skills) == 11
+        assert len(registry._skills) == 14
 
     @pytest.mark.parametrize("name", [
         "enumerate_subdomains", "probe_http", "crawl_site",

@@ -24,7 +24,7 @@ def registry(config):
 
 class TestSkillRegistry:
     def test_build_registry_has_11_skills(self, registry):
-        assert len(registry._skills) == 11
+        assert len(registry._skills) == 14
 
     def test_get_existing_skill(self, registry):
         skill = registry.get("check_headers")

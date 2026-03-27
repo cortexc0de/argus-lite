@@ -417,6 +417,129 @@ class TestPayloadSkill(Skill):
             return SkillResult(success=False, error=str(exc))
 
 
+class BrowseTargetSkill(Skill):
+    name = "browse_target"
+    description = "Open target in headless browser, capture API calls, extract JS endpoints, get cookies"
+
+    def is_available(self) -> bool:
+        from argus_lite.core.browser import BrowserAgent
+        return BrowserAgent.is_available()
+
+    async def execute(self, params: dict, context: AgentContext) -> SkillResult:
+        from argus_lite.core.browser import BrowserAgent
+
+        target = params.get("target", f"https://{context.target}")
+        browser = BrowserAgent()
+        try:
+            await browser.start(headless=True)
+            status = await browser.navigate(target)
+            api_calls = browser.get_api_calls()
+            cookies = await browser.get_cookies()
+            inputs = await browser.get_dom_inputs()
+            js_endpoints = await browser.get_js_endpoints()
+
+            return SkillResult(
+                success=True,
+                data={
+                    "status": status,
+                    "api_calls": [{"method": c.method, "url": c.url} for c in api_calls[:20]],
+                    "cookies": [{"name": c["name"], "domain": c.get("domain", "")} for c in cookies],
+                    "inputs": inputs[:20],
+                    "js_endpoints": js_endpoints[:20],
+                },
+                summary=f"Browser: {len(api_calls)} API calls, {len(cookies)} cookies, {len(inputs)} inputs, {len(js_endpoints)} JS endpoints",
+            )
+        except Exception as exc:
+            return SkillResult(success=False, error=str(exc))
+        finally:
+            await browser.close()
+
+
+class GraphQLIntrospectSkill(Skill):
+    name = "graphql_introspect"
+    description = "Send GraphQL introspection query to discover schema, types, and queries"
+
+    async def execute(self, params: dict, context: AgentContext) -> SkillResult:
+        import httpx as _httpx
+
+        target = params.get("target", f"https://{context.target}")
+        endpoint = params.get("endpoint", f"{target}/graphql")
+        query = {"query": '{ __schema { types { name fields { name type { name } } } queryType { name } mutationType { name } } }'}
+
+        try:
+            async with _httpx.AsyncClient(timeout=20, verify=False) as client:
+                resp = await client.post(endpoint, json=query)
+                data = resp.json()
+
+                if "errors" in data and not data.get("data"):
+                    return SkillResult(success=False, error=f"Introspection disabled: {data['errors'][0].get('message', '')}")
+
+                schema = data.get("data", {}).get("__schema", {})
+                types = schema.get("types", [])
+                user_types = [t for t in types if not t["name"].startswith("__")]
+                query_type = schema.get("queryType", {}).get("name", "")
+                mutation_type = schema.get("mutationType", {})
+
+                # Find types with ID fields (IDOR candidates)
+                idor_candidates = []
+                for t in user_types:
+                    for f in (t.get("fields") or []):
+                        if f["name"].lower() in ("id", "userid", "user_id", "accountid"):
+                            idor_candidates.append(f"{t['name']}.{f['name']}")
+
+                return SkillResult(
+                    success=True,
+                    data={
+                        "types_count": len(user_types),
+                        "type_names": [t["name"] for t in user_types[:20]],
+                        "query_type": query_type,
+                        "has_mutations": mutation_type is not None,
+                        "idor_candidates": idor_candidates,
+                    },
+                    summary=f"GraphQL: {len(user_types)} types, {len(idor_candidates)} IDOR candidates",
+                )
+        except Exception as exc:
+            return SkillResult(success=False, error=str(exc))
+
+
+class TestWebSocketSkill(Skill):
+    name = "test_websocket"
+    description = "Connect to WebSocket endpoint, send test payloads, analyze responses"
+
+    async def execute(self, params: dict, context: AgentContext) -> SkillResult:
+        import asyncio
+
+        target = params.get("target", context.target)
+        ws_url = params.get("ws_url", f"wss://{target}/ws")
+        payloads = params.get("payloads", ["ping", '{"type":"subscribe","channel":"test"}'])
+
+        try:
+            import websockets  # noqa: F401
+        except ImportError:
+            return SkillResult(success=False, error="websockets package not installed")
+
+        import websockets
+
+        results: list[dict] = []
+        try:
+            async with websockets.connect(ws_url, open_timeout=10) as ws:
+                for payload in payloads[:5]:
+                    await ws.send(payload)
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=5)
+                        results.append({"sent": payload, "received": str(response)[:200]})
+                    except asyncio.TimeoutError:
+                        results.append({"sent": payload, "received": "(timeout)"})
+
+            return SkillResult(
+                success=True,
+                data={"exchanges": results, "ws_url": ws_url},
+                summary=f"WebSocket: {len(results)} exchanges on {ws_url}",
+            )
+        except Exception as exc:
+            return SkillResult(success=False, error=f"WebSocket failed: {exc}")
+
+
 def build_skill_registry(
     config: AppConfig,
     skill_dirs: list["Path"] | None = None,
@@ -444,6 +567,9 @@ def build_skill_registry(
     registry.register(DetectTechSkill(config))
     registry.register(ScanPortsSkill(config))
     registry.register(TestPayloadSkill())
+    registry.register(BrowseTargetSkill())
+    registry.register(GraphQLIntrospectSkill())
+    registry.register(TestWebSocketSkill())
 
     # Load custom .md skills
     dirs = skill_dirs or [Path(d).expanduser() for d in config.skills.dirs]

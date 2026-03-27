@@ -221,13 +221,13 @@ description: Extra security check
         registry = build_skill_registry(AppConfig(), skill_dirs=[tmp_path])
         assert registry.get("extra_check") is not None
         # All 11 built-in skills still present
-        assert len(registry._skills) == 12  # 11 built-in + 1 custom
+        assert len(registry._skills) == 15  # 14 built-in + 1 custom
 
     def test_build_skill_registry_without_custom_skills(self):
         from argus_lite.core.skills import build_skill_registry
 
         registry = build_skill_registry(AppConfig())
-        assert len(registry._skills) == 11  # unchanged
+        assert len(registry._skills) == 14  # unchanged
 
     def test_duplicate_name_skipped(self, tmp_path):
         from argus_lite.core.skill_loader import register_markdown_skills
