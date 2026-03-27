@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Argus — Autonomous Offensive AI System</title>
+    <meta name="description" content="Автономный ИИ-фреймворк для пентестинга с деревьями атак, графами эксплойтов и 11 навыками">
+    <meta property="og:title" content="Argus — Autonomous Offensive AI System">
+    <meta property="og:description" content="LLM-управляемый агент для пентестинга с деревьями планов, графами атак и адаптивными полезными нагрузками">
+    <meta property="og:image" content="https://raw.githubusercontent.com/cortexc0de/argus-lite/master/argus_banner.png">
+    <meta property="og:url" content="https://cortexc0de.github.io/argus-lite/">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --border: #1e1e2e;
+            --text: #e0e0e8;
+            --text-dim: #8888a0;
+            --accent: #00ff41;
+            --accent-dim: #00cc33;
+            --blue: #4488ff;
+            --red: #ff4466;
+            --orange: #ff8844;
+            --purple: #aa66ff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 60px 0 40px;
+            background: linear-gradient(180deg, #0d0d18 0%, var(--bg) 100%);
+        }
+
+        .hero img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            margin-bottom: 32px;
+        }
+
+        .hero h1 {
+            font-size: 2.8em;
+            font-weight: 700;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #fff, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 1.2em;
+            color: var(--text-dim);
+            max-width: 750px;
+            margin: 0 auto 32px;
+        }
+
+        .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 32px; }
+        .badges img { height: 22px; }
+
+        .cta-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-size: 1em; font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: var(--accent); color: #000; }
+        .btn-primary:hover { background: #33ff66; transform: translateY(-1px); }
+
+        .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--accent); }
+
+        /* Features */
+        .features { padding: 80px 0; }
+
+        .section-title { text-align: center; font-size: 2em; margin-bottom: 48px; }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            transition: border-color 0.2s;
+        }
+        .feature-card:hover { border-color: var(--accent-dim); }
+        .feature-card .icon { font-size: 2em; margin-bottom: 12px; }
+        .feature-card h3 { font-size: 1.15em; margin-bottom: 8px; }
+        .feature-card p { color: var(--text-dim); font-size: 0.95em; }
+
+        /* Code */
+        .code-section { padding: 60px 0; }
+
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.9em;
+            line-height: 1.7;
+        }
+
+        .code-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ff5f57; }
+        .dot-yellow { background: #febc2e; }
+        .dot-green { background: #28c840; }
+        .kw { color: var(--purple); }
+        .str { color: var(--accent); }
+        .comment { color: var(--text-dim); }
+        .cmd { color: var(--blue); }
+
+        /* Skills table */
+        .skills-section { padding: 60px 0; }
+
+        table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 12px; overflow: hidden; }
+        th { text-align: left; padding: 14px 20px; background: #16162a; font-weight: 600; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+        td { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 0.95em; }
+        td code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--accent); }
+
+        /* Architecture */
+        .arch-section { padding: 60px 0; text-align: center; }
+
+        .arch-diagram {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            line-height: 1.8;
+            text-align: left;
+            display: inline-block;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        /* Stats */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 24px;
+            padding: 60px 0;
+        }
+
+        .stat { text-align: center; padding: 24px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
+        .stat .number { font-size: 2.5em; font-weight: 700; color: var(--accent); }
+        .stat .label { color: var(--text-dim); font-size: 0.9em; margin-top: 4px; }
+
+        /* Docs links */
+        .docs-section { padding: 60px 0; }
+
+        .docs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .doc-link {
+            display: block; padding: 20px;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; text-decoration: none; color: var(--text);
+            transition: all 0.2s;
+        }
+        .doc-link:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .doc-link strong { display: block; margin-bottom: 4px; }
+        .doc-link span { color: var(--text-dim); font-size: 0.9em; }
+
+        /* Footer */
+        footer { text-align: center; padding: 40px 0; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.9em; }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        @media (max-width: 600px) {
+            .hero h1 { font-size: 1.8em; }
+            .hero p { font-size: 1em; }
+            .feature-grid { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<section class="hero">
+    <div class="container">
+        <img src="https://raw.githubusercontent.com/cortexc0de/argus-lite/master/argus_banner.png" alt="Argus Banner">
+
+        <h1>Argus</h1>
+        <p>Автономный ИИ-фреймворк для пентестинга &mdash; LLM-агент с деревьями планов, графами атак, адаптивными полезными нагрузками и самообучением</p>
+
+        <div class="badges">
+            <img src="https://img.shields.io/badge/version-6.0.0-00ff41?style=flat-square" alt="Version">
+            <img src="https://img.shields.io/badge/tests-808-brightgreen?style=flat-square" alt="Tests">
+            <img src="https://img.shields.io/badge/tools-15-orange?style=flat-square" alt="Tools">
+            <img src="https://img.shields.io/badge/skills-11+custom-ff6b6b?style=flat-square" alt="Skills">
+            <img src="https://img.shields.io/badge/OSINT-7_APIs-blue?style=flat-square" alt="OSINT">
+            <img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+            <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
+        </div>
+
+        <div class="cta-group">
+            <a href="https://github.com/cortexc0de/argus-lite" class="btn btn-primary">
+                GitHub
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/getting-started.md" class="btn btn-secondary">
+                Документация
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="container">
+    <div class="stats">
+        <div class="stat"><div class="number">808</div><div class="label">Тестов пройдено</div></div>
+        <div class="stat"><div class="number">15</div><div class="label">Инструментов</div></div>
+        <div class="stat"><div class="number">11+</div><div class="label">Навыков агента</div></div>
+        <div class="stat"><div class="number">7</div><div class="label">OSINT API</div></div>
+    </div>
+</section>
+
+<section class="code-section">
+    <div class="container">
+        <h2 class="section-title">Быстрый старт</h2>
+        <div class="code-header"><span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span></div>
+        <pre><span class="comment"># Установка</span>
+<span class="cmd">git clone</span> <span class="str">https://github.com/cortexc0de/argus-lite.git</span>
+<span class="cmd">cd</span> argus-lite && <span class="cmd">sudo</span> ./install.sh
+
+<span class="comment"># Автономный агент</span>
+<span class="cmd">argus agent</span> example.com
+
+<span class="comment"># Мульти-агентная команда</span>
+<span class="cmd">argus agent</span> example.com <span class="kw">--multi-agent</span>
+
+<span class="comment"># Миссия: эксфильтрация данных</span>
+<span class="cmd">argus agent</span> example.com <span class="kw">--mission</span> <span class="str">data_exfiltration</span>
+
+<span class="comment"># Пайплайн-сканирование</span>
+<span class="cmd">argus scan</span> example.com <span class="kw">--preset</span> <span class="str">full</span></pre>
+    </div>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2 class="section-title">Ключевые возможности</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">&#x1f9e0;</div>
+                <h3>Деревья планов</h3>
+                <p>LLM строит ветвящиеся стратегии атак с оценкой вероятности. Агент всегда выбирает наиболее перспективный путь.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f578;</div>
+                <h3>Графы атак</h3>
+                <p>Находки связываются в цепочки эксплойтов. BFS-поиск путей с байесовским обновлением вероятностей.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f3af;</div>
+                <h3>Скоринг целей</h3>
+                <p>Эндпоинты оцениваются как CRITICAL/HIGH/MEDIUM/LOW перед выполнением. Агент фокусируется на высокоценных целях.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f50d;</div>
+                <h3>Адаптивные пейлоады</h3>
+                <p>Итеративная доработка: попытка &rarr; анализ ответа &rarr; LLM дорабатывает &rarr; повтор. Автоматический обход WAF.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f465;</div>
+                <h3>Мульти-агентная команда</h3>
+                <p>3 специализированных агента: Разведка, Сканер уязвимостей, Эксплуатация. У каждого свой цикл решений LLM.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f4da;</div>
+                <h3>База знаний</h3>
+                <p>6 встроенных паттернов эксплойтов, подобранных под обнаруженный стек. WordPress CSRF, GraphQL IDOR, Laravel debug, JWT bypass.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f4c8;</div>
+                <h3>Мета-обучение</h3>
+                <p>Отслеживает эффективность навыков по технологиям. Приоритизирует то, что работает, деприоритизирует неэффективное.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f6e1;</div>
+                <h3>Детекция окружения</h3>
+                <p>Отпечатки WAF/CDN перед атакой. Cloudflare, ModSecurity, Imperva, Akamai, Sucuri, AWS WAF, F5.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">&#x1f4dd;</div>
+                <h3>Кастомные навыки (.md)</h3>
+                <p>Определяйте новые навыки в markdown-файлах. YAML-шапка + пронумерованные шаги. Автоматическая загрузка агентом.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="skills-section">
+    <div class="container">
+        <h2 class="section-title">11 встроенных навыков</h2>
+        <table>
+            <thead><tr><th>Навык</th><th>Инструмент</th><th>Описание</th></tr></thead>
+            <tbody>
+                <tr><td><code>enumerate_subdomains</code></td><td>subfinder</td><td>Поиск поддоменов через пассивные источники</td></tr>
+                <tr><td><code>probe_http</code></td><td>httpx</td><td>Проверка живых хостов</td></tr>
+                <tr><td><code>crawl_site</code></td><td>katana</td><td>Обнаружение URL и эндпоинтов</td></tr>
+                <tr><td><code>scan_nuclei</code></td><td>nuclei</td><td>Сканирование уязвимостей по шаблонам</td></tr>
+                <tr><td><code>fuzz_paths</code></td><td>ffuf</td><td>Брутфорс директорий и файлов</td></tr>
+                <tr><td><code>scan_xss</code></td><td>dalfox</td><td>Тестирование XSS (reflected, stored, DOM)</td></tr>
+                <tr><td><code>scan_sqli</code></td><td>sqlmap</td><td>Обнаружение SQL-инъекций</td></tr>
+                <tr><td><code>check_headers</code></td><td>встроенный</td><td>Анализ заголовков безопасности</td></tr>
+                <tr><td><code>detect_tech</code></td><td>whatweb</td><td>Определение технологий</td></tr>
+                <tr><td><code>scan_ports</code></td><td>naabu</td><td>Сканирование TCP-портов</td></tr>
+                <tr><td><code>test_payload</code></td><td>встроенный</td><td>Кастомные HTTP-запросы с детекцией отражения</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="arch-section">
+    <div class="container">
+        <h2 class="section-title">Архитектура</h2>
+        <div class="arch-diagram">
+<span style="color:var(--accent)">LLM-агент</span> (планирование, решения, адаптация)
+    |
+    v
+<span style="color:var(--blue)">Мульти-агентная команда</span> (Разведка + Сканер + Эксплуатация)
+    |
+    v
+<span style="color:var(--orange)">Система навыков</span> (11 встроенных + кастомные .md)
+    |
+    v
+<span style="color:var(--purple)">15 инструментов</span> + <span style="color:var(--red)">7 OSINT API</span>
+subfinder httpx katana nuclei naabu ffuf
+dalfox sqlmap dnsx tlsx gau gowitness whatweb
+Shodan Censys ZoomEye FOFA GreyNoise VT ST
+        </div>
+    </div>
+</section>
+
+<section class="docs-section">
+    <div class="container">
+        <h2 class="section-title">Документация</h2>
+        <div class="docs-grid">
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/getting-started.md" class="doc-link">
+                <strong>Быстрый старт</strong>
+                <span>Начните за 5 минут</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/installation.md" class="doc-link">
+                <strong>Установка</strong>
+                <span>Kali, Docker, ручная настройка</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/agent-guide.md" class="doc-link">
+                <strong>Гайд по агенту</strong>
+                <span>Миссии, стелс, мульти-агент</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/skills/custom-skills.md" class="doc-link">
+                <strong>Кастомные навыки</strong>
+                <span>Создание .md навыков для агента</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/cli-reference.md" class="doc-link">
+                <strong>CLI справочник</strong>
+                <span>Все команды и флаги</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/docs/api-reference.md" class="doc-link">
+                <strong>API справочник</strong>
+                <span>REST API дашборда</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/CONTRIBUTING.md" class="doc-link">
+                <strong>Контрибьютинг</strong>
+                <span>Настройка окружения, PR процесс, TDD</span>
+            </a>
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/CHANGELOG.md" class="doc-link">
+                <strong>Changelog</strong>
+                <span>История версий v1.0 &mdash; v6.0</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <p>
+            <a href="https://github.com/cortexc0de/argus-lite">GitHub</a> &bull;
+            <a href="https://github.com/cortexc0de/argus-lite/releases">Релизы</a> &bull;
+            <a href="https://github.com/cortexc0de/argus-lite/blob/master/LICENSE">MIT лицензия</a>
+        </p>
+        <p style="margin-top: 8px;">Только для авторизованного тестирования безопасности.</p>
+    </div>
+</footer>
+
+</body>
+</html>
