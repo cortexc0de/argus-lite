@@ -11,8 +11,10 @@ permissions:
 
 jobs:
   test:
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
@@ -23,11 +25,29 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ matrix.python-version }}-
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest tests/ -q --tb=short
+        run: pytest tests/ -q --tb=short -x
 
-      - name: Check coverage
-        run: pytest tests/ --cov=argus_lite --cov-report=term-missing --cov-fail-under=70
+      - name: Coverage report
+        if: matrix.python-version == '3.12'
+        run: |
+          pytest tests/ --cov=argus_lite --cov-report=term-missing --cov-fail-under=70
+          pytest tests/ --cov=argus_lite --cov-report=json:coverage.json -q
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.json
+          retention-days: 30
